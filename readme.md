@@ -1,0 +1,1 @@
+这是一个十分简单的Springboot脚手架，集成postgresql和Mybatis-Plus
