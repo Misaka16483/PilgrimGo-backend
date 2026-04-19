@@ -29,6 +29,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 公共只读接口（作品搜索/详情）允许匿名访问
+        boolean isPublicGet = "GET".equalsIgnoreCase(request.getMethod())
+                && path.startsWith("/api/anime");
+        if (isPublicGet) {
+            tryAttachUserId(request);
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
@@ -50,5 +59,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         response.setStatus(401);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"code\":401,\"message\":\"未登录\",\"data\":null}");
+    }
+
+    /** 已登录则把 userId 挂到请求上，未登录就静默跳过。供公共接口使用。 */
+    private void tryAttachUserId(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) return;
+        String token = header.substring(7);
+        if (jwtUtil.isValid(token)) {
+            request.setAttribute("userId", jwtUtil.getUserId(token));
+        }
     }
 }
