@@ -9,14 +9,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 整合 Bangumi 搜索 + Anitabi 巡礼详情的外部数据客户端。
@@ -31,23 +33,28 @@ public class ExternalAnimeClient {
     @Autowired
     private RestTemplate restTemplate;
 
-    /** Bangumi 搜索返回 top N；仅保留常用字段。 */
+    /**
+     * 走 Bangumi v0 搜索：POST + JSON body，关键字放 body 里，CJK 无需任何 URL 编码处理。
+     * 旧接口 /search/subject/{keyword} 在 URL 里塞中文容易踩 UriComponentsBuilder 的编码坑。
+     */
     public List<BangumiSearchItem> searchBangumi(String keyword, int max) {
         if (keyword == null || keyword.isBlank()) return Collections.emptyList();
-        String url = UriComponentsBuilder.fromHttpUrl("https://api.bgm.tv/search/subject/" + keyword)
-                .queryParam("type", 2)
-                .queryParam("responseGroup", "small")
-                .queryParam("max_results", max)
-                .encode(StandardCharsets.UTF_8)
-                .toUriString();
+        String url = "https://api.bgm.tv/v0/search/subjects?limit=" + max + "&offset=0";
+        HttpHeaders h = headers();
+        h.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("keyword", keyword);
+        body.put("filter", Map.of("type", List.of(2)));
         try {
-            ResponseEntity<BangumiSearchResp> resp = restTemplate.exchange(
-                    url, HttpMethod.GET, new HttpEntity<>(headers()), BangumiSearchResp.class);
-            BangumiSearchResp body = resp.getBody();
-            if (body == null || body.getList() == null) return Collections.emptyList();
-            return body.getList();
+            ResponseEntity<BangumiV0SearchResp> resp = restTemplate.exchange(
+                    url, HttpMethod.POST, new HttpEntity<>(body, h), BangumiV0SearchResp.class);
+            BangumiV0SearchResp data = resp.getBody();
+            if (data == null || data.getData() == null) return Collections.emptyList();
+            return data.getData().stream()
+                    .map(BangumiV0Subject::toLegacyItem)
+                    .collect(Collectors.toList());
         } catch (Exception e) {
-            log.warn("Bangumi search failed for '{}': {}", keyword, e.getMessage());
+            log.warn("Bangumi v0 search failed for '{}': {}", keyword, e.getMessage());
             return Collections.emptyList();
         }
     }
@@ -76,13 +83,6 @@ public class ExternalAnimeClient {
 
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class BangumiSearchResp {
-        private Integer results;
-        private List<BangumiSearchItem> list;
-    }
-
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class BangumiSearchItem {
         private Integer id;
         private String name;
@@ -97,6 +97,34 @@ public class ExternalAnimeClient {
             private String common;
             private String medium;
             private String small;
+        }
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class BangumiV0SearchResp {
+        private Integer total;
+        private List<BangumiV0Subject> data;
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class BangumiV0Subject {
+        private Integer id;
+        private String name;
+        @JsonProperty("name_cn") private String nameCn;
+        private String date;
+        private String image;
+        private BangumiSearchItem.Images images;
+
+        public BangumiSearchItem toLegacyItem() {
+            BangumiSearchItem s = new BangumiSearchItem();
+            s.setId(id);
+            s.setName(name);
+            s.setNameCn(nameCn);
+            s.setAirDate(date);
+            s.setImages(images);
+            return s;
         }
     }
 
