@@ -403,6 +403,8 @@ CREATE TABLE public."user" (
     email character varying(100),
     password_hash character varying(255),
     avatar_url character varying(500),
+    nickname character varying(50),
+    bio text,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL
 );
