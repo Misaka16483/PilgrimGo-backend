@@ -22,6 +22,10 @@ public class UserService {
         return userMapper.selectOne(new QueryWrapper<User>().eq("username", username));
     }
 
+    public User findByPhone(String phone) {
+        return userMapper.selectOne(new QueryWrapper<User>().eq("phone", phone));
+    }
+
     public User findById(Long id) {
         return userMapper.selectById(id);
     }
@@ -34,6 +38,21 @@ public class UserService {
         user.setUsername(username);
         user.setPasswordHash(passwordEncoder.encode(password));
         user.setNickname(nickname != null ? nickname : username);
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
+        userMapper.insert(user);
+        return user;
+    }
+
+    public User registerWithPhone(String phone, String password, String nickname) {
+        if (findByUsername(phone) != null) {
+            throw new RuntimeException("手机号已注册");
+        }
+        User user = new User();
+        user.setUsername(phone);
+        user.setPhone(phone);
+        user.setPasswordHash(passwordEncoder.encode(password));
+        user.setNickname(nickname != null ? nickname : phone);
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
         userMapper.insert(user);
