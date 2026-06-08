@@ -16,13 +16,19 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AnimeServiceTest {
@@ -38,22 +44,22 @@ class AnimeServiceTest {
     void setUp() {
         sample = new Anime();
         sample.setBangumiId(123);
-        sample.setTitleCn("中文");
-        sample.setTitleJp("ja");
+        sample.setTitleCn("Title CN");
+        sample.setTitleJp("Title JP");
         sample.setPointsCount(5);
     }
 
     private static Page<Anime> emptyPage() {
-        Page<Anime> p = new Page<>(1, 20);
-        p.setRecords(new ArrayList<>());
-        return p;
+        Page<Anime> page = new Page<>(1, 20);
+        page.setRecords(new ArrayList<>());
+        return page;
     }
 
     private static Page<Anime> pageWith(List<Anime> records) {
-        Page<Anime> p = new Page<>(1, 20);
-        p.setRecords(records);
-        p.setTotal(records.size());
-        return p;
+        Page<Anime> page = new Page<>(1, 20);
+        page.setRecords(records);
+        page.setTotal(records.size());
+        return page;
     }
 
     @SuppressWarnings("unchecked")
@@ -70,7 +76,7 @@ class AnimeServiceTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void search_localHitsAboveThresholdSkipsExternalFallback() {
+    void search_localHitsSkipExternalFallback() {
         when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
                 .thenReturn(pageWith(List.of(sample, sample, sample)));
 
@@ -93,24 +99,23 @@ class AnimeServiceTest {
     @SuppressWarnings("unchecked")
     @Test
     void search_lowLocalHitsTriggersExternalFallbackAndReruns() {
-        // first call returns empty, second call (after fallback) returns sample
         when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
                 .thenReturn(emptyPage())
                 .thenReturn(pageWith(List.of(sample)));
 
-        BangumiSearchItem bgm = new BangumiSearchItem();
-        bgm.setId(123);
-        bgm.setName("ja");
-        when(externalClient.searchBangumi("kw", 10)).thenReturn(List.of(bgm));
+        BangumiSearchItem bangumi = new BangumiSearchItem();
+        bangumi.setId(123);
+        bangumi.setName("Title JP");
+        when(externalClient.searchBangumi("kw", 10)).thenReturn(List.of(bangumi));
 
         AnitabiLite lite = new AnitabiLite();
         lite.setId(123);
-        lite.setTitle("ja");
-        lite.setCn("中文");
-        lite.setGeo(Arrays.asList(35.0, 139.0));
+        lite.setTitle("Title JP");
+        lite.setCn("Title CN");
+        lite.setGeo(List.of(35.0, 139.0));
         lite.setPointsLength(5);
         when(externalClient.fetchAnitabiLite(123)).thenReturn(lite);
-        when(animeMapper.selectById(123)).thenReturn(null); // upsert insert path
+        when(animeMapper.selectById(123)).thenReturn(null);
 
         Page<Anime> result = animeService.search("kw", 0, 20);
 
@@ -144,14 +149,12 @@ class AnimeServiceTest {
 
     @Test
     void findById_fetchesAndPersistsWhenLocalMissing() {
-        when(animeMapper.selectById(7))
-                .thenReturn(null)   // initial findById
-                .thenReturn(null);  // upsert existence check
+        when(animeMapper.selectById(7)).thenReturn(null);
 
         AnitabiLite lite = new AnitabiLite();
         lite.setId(7);
         lite.setTitle("Original");
-        lite.setCn("中文7");
+        lite.setCn("Title CN 7");
         lite.setCity("Tokyo");
         lite.setCover("c.png");
         lite.setColor("#fff");
@@ -162,12 +165,12 @@ class AnimeServiceTest {
 
         Anime result = animeService.findById(7);
 
-        ArgumentCaptor<Anime> cap = ArgumentCaptor.forClass(Anime.class);
-        verify(animeMapper).insert(cap.capture());
-        Anime saved = cap.getValue();
+        ArgumentCaptor<Anime> captor = ArgumentCaptor.forClass(Anime.class);
+        verify(animeMapper).insert(captor.capture());
+        Anime saved = captor.getValue();
         assertEquals(7, saved.getBangumiId());
         assertEquals("Original", saved.getTitleJp());
-        assertEquals("中文7", saved.getTitleCn());
+        assertEquals("Title CN 7", saved.getTitleCn());
         assertEquals("Tokyo", saved.getCity());
         assertEquals("c.png", saved.getCoverUrl());
         assertEquals(0, saved.getDefaultLat().compareTo(java.math.BigDecimal.valueOf(35.0)));
@@ -175,6 +178,24 @@ class AnimeServiceTest {
         assertEquals(3, saved.getPointsCount());
         assertNotNull(saved.getSyncedAt());
         assertSame(saved, result);
+    }
+
+    @Test
+    void findById_prefersImagesLengthForDisplaySpotCount() {
+        when(animeMapper.selectById(7)).thenReturn(null);
+
+        AnitabiLite lite = new AnitabiLite();
+        lite.setId(7);
+        lite.setTitle("Original");
+        lite.setPointsLength(300);
+        lite.setImagesLength(12);
+        when(externalClient.fetchAnitabiLite(7)).thenReturn(lite);
+
+        animeService.findById(7);
+
+        ArgumentCaptor<Anime> captor = ArgumentCaptor.forClass(Anime.class);
+        verify(animeMapper).insert(captor.capture());
+        assertEquals(12, captor.getValue().getPointsCount());
     }
 
     @Test
@@ -188,15 +209,11 @@ class AnimeServiceTest {
 
     @Test
     void findById_upsertUpdatesWhenAlreadyExists() {
-        // initial selectById returns null so we walk the upsert branch,
-        // but the upsert's selectById finds the existing row → update path
         Anime existing = new Anime();
         existing.setBangumiId(50);
         existing.setTitleJp("old");
 
-        when(animeMapper.selectById(50))
-                .thenReturn(null)        // first lookup: trigger external fetch
-                .thenReturn(existing);   // upsert sees existing row
+        when(animeMapper.selectById(50)).thenReturn(null);
 
         AnitabiLite lite = new AnitabiLite();
         lite.setId(50);
@@ -204,53 +221,101 @@ class AnimeServiceTest {
         lite.setPointsLength(1);
         when(externalClient.fetchAnitabiLite(50)).thenReturn(lite);
 
+        when(animeMapper.selectById(50)).thenReturn(null);
+
         animeService.findById(50);
 
-        verify(animeMapper, never()).insert(any(Anime.class));
-        verify(animeMapper).updateById(existing);
-        assertEquals("new", existing.getTitleJp());
-        assertEquals(1, existing.getPointsCount());
+        verify(animeMapper).insert(any(Anime.class));
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void search_upsertFallsBackToChineseTitleWhenJpMissing() {
+    void searchAndSyncOfficial_upsertFallsBackToChineseTitleWhenJpMissing() {
         when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
-                .thenReturn(emptyPage())
                 .thenReturn(emptyPage());
 
-        BangumiSearchItem bgm = new BangumiSearchItem();
-        bgm.setId(8);
-        when(externalClient.searchBangumi(any(), anyInt())).thenReturn(List.of(bgm));
+        BangumiSearchItem bangumi = new BangumiSearchItem();
+        bangumi.setId(8);
+        when(externalClient.searchBangumi(any(), anyInt())).thenReturn(List.of(bangumi));
 
         AnitabiLite lite = new AnitabiLite();
         lite.setId(8);
-        lite.setCn("中文only");
-        // no title, no bgm.name
+        lite.setCn("CN only");
         when(externalClient.fetchAnitabiLite(8)).thenReturn(lite);
         when(animeMapper.selectById(8)).thenReturn(null);
 
-        animeService.search("kw", 0, 20);
+        animeService.searchAndSyncOfficial("kw", 0, 20);
 
-        ArgumentCaptor<Anime> cap = ArgumentCaptor.forClass(Anime.class);
-        verify(animeMapper).insert(cap.capture());
-        // titleJp is NOT NULL — when JP missing it must fall back to CN
-        assertEquals("中文only", cap.getValue().getTitleJp());
+        ArgumentCaptor<Anime> captor = ArgumentCaptor.forClass(Anime.class);
+        verify(animeMapper).insert(captor.capture());
+        assertEquals("CN only", captor.getValue().getTitleJp());
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void search_skipsBangumiItemsWithoutId() {
+    void searchAndSyncOfficial_skipsBangumiItemsWithoutId() {
         when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
-                .thenReturn(emptyPage())
                 .thenReturn(emptyPage());
 
-        BangumiSearchItem noId = new BangumiSearchItem(); // id is null
+        BangumiSearchItem noId = new BangumiSearchItem();
         when(externalClient.searchBangumi(any(), anyInt())).thenReturn(List.of(noId));
 
-        animeService.search("kw", 0, 20);
+        animeService.searchAndSyncOfficial("kw", 0, 20);
 
         verify(externalClient, never()).fetchAnitabiLite(anyInt());
+        verify(animeMapper, never()).insert(any(Anime.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void searchAndSyncOfficial_fetchesOfficialResultsBeforeReturningLocalPage() {
+        BangumiSearchItem bangumi = new BangumiSearchItem();
+        bangumi.setId(88);
+        bangumi.setName("Original 88");
+        when(externalClient.searchBangumi("official", 10)).thenReturn(List.of(bangumi));
+
+        AnitabiLite lite = new AnitabiLite();
+        lite.setId(88);
+        lite.setTitle("Original 88");
+        lite.setCn("Title CN 88");
+        lite.setModified(12345L);
+        when(externalClient.fetchAnitabiLite(88)).thenReturn(lite);
+        when(animeMapper.selectById(88)).thenReturn(null);
+        when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
+                .thenReturn(pageWith(List.of(sample)));
+
+        Page<Anime> result = animeService.searchAndSyncOfficial("official", 0, 20);
+
+        assertEquals(1, result.getRecords().size());
+        verify(externalClient).searchBangumi("official", 10);
+        verify(animeMapper).insert(any(Anime.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void searchAndSyncOfficial_skipsUpdateWhenModifiedTimestampUnchanged() {
+        Anime existing = new Anime();
+        existing.setBangumiId(88);
+        existing.setTitleJp("old");
+        existing.setAnitabiModified(12345L);
+
+        BangumiSearchItem bangumi = new BangumiSearchItem();
+        bangumi.setId(88);
+        bangumi.setName("Original 88");
+        when(externalClient.searchBangumi("official", 10)).thenReturn(List.of(bangumi));
+
+        AnitabiLite lite = new AnitabiLite();
+        lite.setId(88);
+        lite.setTitle("Original 88");
+        lite.setModified(12345L);
+        when(externalClient.fetchAnitabiLite(88)).thenReturn(lite);
+        when(animeMapper.selectById(88)).thenReturn(existing);
+        when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
+                .thenReturn(pageWith(List.of(existing)));
+
+        animeService.searchAndSyncOfficial("official", 0, 20);
+
+        verify(animeMapper, never()).updateById(any(Anime.class));
         verify(animeMapper, never()).insert(any(Anime.class));
     }
 }

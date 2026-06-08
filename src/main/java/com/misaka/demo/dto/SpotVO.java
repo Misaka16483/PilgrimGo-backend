@@ -17,6 +17,11 @@ public class SpotVO {
     private String animeImageUrl;
     private String realImageUrl;    // 用户实景图，暂无来源，预留
     private String episode;
+    private Integer episodeNumber;
+    private Integer sceneSeconds;
+    private String sceneTime;
+    private String origin;
+    private String originUrl;
 
     public static SpotVO from(Spot s, Anime a) {
         SpotVO v = new SpotVO();
@@ -30,14 +35,24 @@ public class SpotVO {
         if (s.getLongitude() != null) v.setLongitude(s.getLongitude().doubleValue());
         v.setAnimeImageUrl(s.getImageUrl());
         v.setEpisode(formatEpisode(s.getEpisode(), s.getSceneSeconds()));
+        v.setEpisodeNumber(s.getEpisode());
+        v.setSceneSeconds(s.getSceneSeconds());
+        v.setSceneTime(formatSceneTime(s.getSceneSeconds()));
+        v.setOrigin(s.getOrigin());
+        v.setOriginUrl(s.getOriginUrl());
         return v;
     }
 
     private static String formatEpisode(Integer ep, Integer seconds) {
         if (ep == null) return null;
         if (seconds == null) return "EP" + ep;
+        return String.format("EP%d @ %s", ep, formatSceneTime(seconds));
+    }
+
+    private static String formatSceneTime(Integer seconds) {
+        if (seconds == null) return null;
         int m = seconds / 60;
         int s = seconds % 60;
-        return String.format("EP%d @ %d:%02d", ep, m, s);
+        return String.format("%d:%02d", m, s);
     }
 }

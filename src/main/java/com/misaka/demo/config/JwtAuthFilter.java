@@ -24,7 +24,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // 放行不需要认证的路径
-        if (path.startsWith("/api/auth/login") || path.startsWith("/api/auth/register")) {
+        if (path.startsWith("/api/auth/login") || path.startsWith("/api/auth/register")
+                || path.startsWith("/api/auth/forgot-password") || path.startsWith("/api/sms/")) {
             filterChain.doFilter(request, response);
             return;
         }

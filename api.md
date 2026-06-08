@@ -10,6 +10,75 @@ sidebar_position: 5
  - 图片 API 基础地址 `https://image.anitabi.cn/`
 > 请勿在任何场景下请求主域 `https://anitabi.cn/`，主域不确保任何 **资源地址** 以及 **数据结构** 的稳定
 
+## 通过作品名搜索 Bangumi `subjectID`
+
+Anitabi 本身不提供按名称搜索的接口，所有数据都以 Bangumi 的 `subjectID` 为键。需先调用 Bangumi 官方搜索 API 拿到 id，再用该 id 请求 Anitabi。
+
+后端实际使用的是 Bangumi v0 搜索接口（`POST` + JSON body），关键字直接放 body 中，避免在 URL 中放 CJK 字符踩编码坑。
+
+`POST` `https://api.bgm.tv/v0/search/subjects?limit={max}&offset=0`
+
+QueryString
+ - `limit` 返回条数，对应后端 `searchBangumi(keyword, max)` 的 `max`
+ - `offset` 偏移量，默认 `0`
+
+请求头
+ - `Content-Type: application/json`
+ - `Accept: application/json`
+ - `User-Agent` 必带（后端使用 `PilgrimGo/1.0 (contact@pilgrimgo.com)`），否则偶发 403
+
+请求体
+```json
+{
+  "keyword": "某科学的超电磁炮",
+  "filter": { "type": [2] }
+}
+```
+ - `keyword` 搜索关键词，CJK 直接放入即可
+ - `filter.type` 条目类型数组，`2` 表示动画
+
+示例（搜索「某科学的超电磁炮」）：
+```bash
+curl -sS "https://api.bgm.tv/v0/search/subjects?limit=5&offset=0" \
+  -H "User-Agent: PilgrimGo/1.0" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"keyword":"某科学的超电磁炮","filter":{"type":[2]}}'
+```
+
+返回片段：
+```json
+{
+  "total": 11,
+  "data": [
+    {
+      "id": 2585,
+      "name": "とある科学の超電磁砲",
+      "name_cn": "某科学的超电磁炮",
+      "date": "2009-10-03",
+      "image": "https://lain.bgm.tv/pic/cover/l/...jpg",
+      "images": {
+        "large": "...",
+        "common": "...",
+        "medium": "...",
+        "small": "..."
+      }
+    }
+  ]
+}
+```
+
+### 属性说明
+ - `total` 命中总数
+ - `data[].id` Bangumi `subjectID`，用于后续 Anitabi 请求
+ - `data[].name` 作品原名
+ - `data[].name_cn` 作品中文译名
+ - `data[].date` 放送日期
+ - `data[].image` 封面图（与 `images.large` 通常一致）
+ - `data[].images` 多尺寸封面对象，含 `large` / `common` / `medium` / `small`
+
+拿到 `id` 后即可调 `https://api.anitabi.cn/bangumi/2585/lite` 获取巡礼信息（本例返回城市「立川市」，12 个地标）。
+
 ## 根据 Bangumi 作品 id 获取对应巡礼地标信息
 
 `GET` `https://api.anitabi.cn/bangumi/${subjectID}/lite` [例](https://api.anitabi.cn/bangumi/115908/lite)

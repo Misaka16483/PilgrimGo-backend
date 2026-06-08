@@ -89,7 +89,26 @@ mybatis-plus.configuration.map-underscore-to-camel-case=true
 # JWT
 jwt.secret=<至少 32 字节的随机密钥>
 jwt.expiration=86400000
+
+# 阿里云 OSS（转折点图片直传，使用 STS 临时凭证）
+oss.access-key-id=<RAM 用户 AK>
+oss.access-key-secret=<RAM 用户 SK>
+oss.role-arn=acs:ram::<accountId>:role/<RoleName>
+oss.role-session-name=pilgrimgo-waypoint
+oss.bucket=<bucket 名>
+oss.region=<例如 cn-beijing>
+oss.endpoint=https://oss-<region>.aliyuncs.com
+oss.sts-endpoint=sts.<region>.aliyuncs.com
+oss.path-prefix=waypoints
+oss.duration-seconds=3600
 ```
+
+### OSS 准备步骤
+
+1. 在阿里云控制台创建 bucket（建议「私有」读写，前端通过签名 URL 访问；如果要直接公网展示巡礼图片可设为「公共读」）。
+2. 在 RAM 控制台创建一个角色（普通角色，受信主体选当前主账号），策略需要包含 `oss:PutObject` 到目标 bucket 的权限，把生成的 ARN 填到 `oss.role-arn`。
+3. 创建一个 RAM 用户并授予 `AliyunSTSAssumeRoleAccess` 系统策略，用它的 AK/SK 填到 `oss.access-key-id` / `oss.access-key-secret`。
+4. 接口 `GET /api/oss/sts`（需登录）会签发一份只能 `PutObject` 到 `{bucket}/waypoints/{userId}/*` 的临时凭证；前端拿到后用 `ali-oss` 直传，再把返回的 URL 写到 `waypoint.photo_url`。
 
 要点：
 

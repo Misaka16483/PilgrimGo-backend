@@ -13,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/anime")
@@ -43,19 +42,28 @@ public class AnimeController {
         return ApiResponse.ok(AnimeVO.from(a));
     }
 
-    /**
-     * 作品下所有取景地，本地缺失或不齐时触发 Anitabi 同步并落库。
-     * force=true 强制重拉一遍（手动刷新/排错用）。
-     */
     @GetMapping("/{id}/spots")
-    public ApiResponse<List<SpotVO>> spots(
+    public ApiResponse<?> spots(
             @PathVariable("id") int id,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
             @RequestParam(defaultValue = "false") boolean force) {
-        Anime a = animeService.findById(id);
-        List<Spot> spots = spotService.findByAnimeId(id, force);
-        List<SpotVO> vos = spots.stream()
-                .map(s -> SpotVO.from(s, a))
-                .collect(Collectors.toList());
-        return ApiResponse.ok(vos);
+        Anime a = spotService.findAnime(id);
+        if (a == null) {
+            a = animeService.findById(id);
+        }
+        final Anime anime = a;
+
+        if (page == null && size == null) {
+            List<Spot> spots = spotService.findByAnimeId(id, force);
+            return ApiResponse.ok(spots.stream().map(s -> SpotVO.from(s, anime)).toList());
+        }
+
+        Page<Spot> spots = spotService.findByAnimeIdPage(
+                id,
+                false,
+                page == null ? 0 : page,
+                size == null ? 12 : size);
+        return ApiResponse.ok(PageResult.from(spots, s -> SpotVO.from(s, anime)));
     }
 }

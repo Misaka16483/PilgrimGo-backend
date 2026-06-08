@@ -1,12 +1,15 @@
 package com.misaka.demo.client;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -15,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +37,9 @@ public class ExternalAnimeClient {
 
     @Autowired
     private RestTemplate restTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     /**
      * 走 Bangumi v0 搜索：POST + JSON body，关键字放 body 里，CJK 无需任何 URL 编码处理。
@@ -67,15 +74,34 @@ public class ExternalAnimeClient {
     public List<AnitabiPoint> fetchAnitabiPoints(int subjectId) {
         String url = "https://api.anitabi.cn/bangumi/" + subjectId + "/points/detail?haveImage=true";
         try {
-            ResponseEntity<List<AnitabiPoint>> resp = restTemplate.exchange(
-                    url, HttpMethod.GET, new HttpEntity<>(headers()),
-                    new ParameterizedTypeReference<List<AnitabiPoint>>() {});
-            List<AnitabiPoint> body = resp.getBody();
-            int n = body == null ? 0 : body.size();
-            log.info("Anitabi points fetched for {}: {} entries", subjectId, n);
-            return body == null ? Collections.emptyList() : body;
+            ResponseEntity<String> resp = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(headers()), String.class);
+            String body = resp.getBody();
+            if (body == null || body.isBlank()) {
+                return Collections.emptyList();
+            }
+
+            JsonNode root = objectMapper.readTree(body);
+            if (!root.isArray()) {
+                log.warn("Anitabi points payload for {} is not an array", subjectId);
+                return Collections.emptyList();
+            }
+
+            List<AnitabiPoint> points = new ArrayList<>();
+            int skipped = 0;
+            for (JsonNode node : root) {
+                try {
+                    points.add(objectMapper.convertValue(node, new TypeReference<AnitabiPoint>() {}));
+                } catch (IllegalArgumentException ex) {
+                    skipped++;
+                    log.warn("Skip malformed Anitabi point for {}: {}", subjectId, ex.getMessage());
+                }
+            }
+
+            log.info("Anitabi points fetched for {}: {} entries, skipped {}", subjectId, points.size(), skipped);
+            return points;
         } catch (Exception e) {
-            log.warn("Anitabi points fetch failed for {}: {}", subjectId, e.toString());
+            log.warn("Anitabi points fetch failed for {}: {}", subjectId, e.toString(), e);
             return Collections.emptyList();
         }
     }
@@ -160,6 +186,7 @@ public class ExternalAnimeClient {
         private Integer s;          // 截图对应秒数
         private List<Double> geo;
         private String origin;
+        @JsonAlias("originUrl")
         private String originURL;
     }
 

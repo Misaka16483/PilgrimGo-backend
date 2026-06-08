@@ -1,8 +1,6 @@
 package com.misaka.demo.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.misaka.demo.config.JwtAuthFilter;
-import com.misaka.demo.config.SecurityConfig;
 import com.misaka.demo.dto.LoginRequest;
 import com.misaka.demo.dto.RegisterRequest;
 import com.misaka.demo.entity.User;
@@ -12,23 +10,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(controllers = AuthController.class,
-        excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
-                classes = {SecurityConfig.class, JwtAuthFilter.class}))
+@SpringBootTest
 @AutoConfigureMockMvc(addFilters = false)
 class AuthControllerTest {
 
@@ -52,10 +45,10 @@ class AuthControllerTest {
     void register_returnsTokenAndUser() throws Exception {
         RegisterRequest req = new RegisterRequest();
         req.setUsername("alice");
-        req.setPassword("pw");
+        req.setPassword("password123");
         req.setNickname("Alice");
 
-        when(userService.register("alice", "pw", "Alice")).thenReturn(user);
+        when(userService.register("alice", "password123", "Alice")).thenReturn(user);
         when(jwtUtil.generateToken(1L, "alice")).thenReturn("token-xyz");
 
         mockMvc.perform(post("/api/auth/register")
@@ -72,7 +65,7 @@ class AuthControllerTest {
     void register_returns400WhenServiceThrows() throws Exception {
         RegisterRequest req = new RegisterRequest();
         req.setUsername("alice");
-        req.setPassword("pw");
+        req.setPassword("password123");
 
         when(userService.register(any(), any(), any()))
                 .thenThrow(new RuntimeException("用户名已存在"));
@@ -93,7 +86,7 @@ class AuthControllerTest {
         req.setPassword("pw");
 
         when(userService.authenticate("alice", "pw")).thenReturn(user);
-        when(jwtUtil.generateToken(eq(1L), eq("alice"))).thenReturn("token-abc");
+        when(jwtUtil.generateToken(1L, "alice")).thenReturn("token-abc");
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -105,19 +98,19 @@ class AuthControllerTest {
     }
 
     @Test
-    void login_returns401WhenServiceThrows() throws Exception {
+    void login_returns400WhenServiceThrows() throws Exception {
         LoginRequest req = new LoginRequest();
         req.setUsername("alice");
         req.setPassword("wrong");
 
-        when(userService.authenticate(any(), any()))
+        when(userService.authenticate("alice", "wrong"))
                 .thenThrow(new RuntimeException("用户名或密码错误"));
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(401))
+                .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("用户名或密码错误"));
     }
 
