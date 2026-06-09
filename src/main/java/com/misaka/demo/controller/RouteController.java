@@ -38,6 +38,21 @@ public class RouteController {
         }
     }
 
+    /**
+     * "我的路径"：当前登录用户发布的路径列表，按创建时间倒序分页。
+     * 同样跳过 trackPoints，列表卡片用不到完整轨迹。
+     */
+    @GetMapping("/mine")
+    public ApiResponse<PageResult<RouteVO>> mine(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        if (userId == null) return ApiResponse.error(401, "未登录");
+        Page<Route> p = routeService.findByUser(userId, page, size);
+        return ApiResponse.ok(PageResult.from(p,
+                route -> toListVO(route, routeService.findAnime(route.getAnimeId()))));
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<RouteVO> detail(@PathVariable("id") long id) {
         Route route = routeService.findById(id);

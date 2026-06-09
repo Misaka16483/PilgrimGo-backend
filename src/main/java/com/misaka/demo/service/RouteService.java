@@ -252,6 +252,18 @@ public class RouteService {
         return routeMapper.selectPage(p, q);
     }
 
+    /**
+     * "我的路径"：当前用户发布的全部路径，按创建时间倒序分页。
+     * 与按作品列表不同，这里包含 pending/rejected——作者要能看到自己未过审的路径。
+     */
+    public Page<Route> findByUser(long userId, int page, int size) {
+        QueryWrapper<Route> q = new QueryWrapper<Route>()
+                .eq("user_id", userId)
+                .orderByDesc("created_at");
+        Page<Route> p = new Page<>(page + 1, size); // MP 页码从 1 起，前端 0 起
+        return routeMapper.selectPage(p, q);
+    }
+
     public List<RoutePoint> findPoints(long routeId) {
         return routePointMapper.selectByRouteId(routeId);
     }

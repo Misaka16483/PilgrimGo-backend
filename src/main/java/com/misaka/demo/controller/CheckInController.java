@@ -36,6 +36,15 @@ public class CheckInController {
         return ApiResponse.ok(checkInService.getFeed(userId, page, size));
     }
 
+    /** "我的打卡"：当前登录用户自己发布的打卡列表，分页。 */
+    @GetMapping("/mine")
+    public ApiResponse<List<CheckInVO>> mine(
+            @RequestAttribute("userId") Long userId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.ok(checkInService.getMine(userId, page, size));
+    }
+
     @GetMapping
     public ApiResponse<List<CheckInVO>> bySpot(
             @RequestAttribute("userId") Long userId,

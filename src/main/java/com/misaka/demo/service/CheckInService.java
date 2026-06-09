@@ -52,6 +52,11 @@ public class CheckInService {
         return checkInMapper.selectBySpot(userId, spotId, size, (page - 1) * size);
     }
 
+    /** "我的打卡"：当前用户自己的打卡列表。 */
+    public List<CheckInVO> getMine(Long userId, int page, int size) {
+        return checkInMapper.selectByUser(userId, size, (page - 1) * size);
+    }
+
     public LikeResult like(Long userId, Long checkInId) {
         long exists = checkInLikeMapper.selectCount(new QueryWrapper<CheckInLike>()
                 .eq("user_id", userId)
