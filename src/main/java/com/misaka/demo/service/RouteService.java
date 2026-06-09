@@ -3,11 +3,13 @@ package com.misaka.demo.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.misaka.demo.dto.RouteReviewVO;
 import com.misaka.demo.dto.RouteUploadRequest;
 import com.misaka.demo.entity.Anime;
 import com.misaka.demo.entity.CheckIn;
 import com.misaka.demo.entity.Route;
 import com.misaka.demo.entity.RoutePoint;
+import com.misaka.demo.entity.RouteRating;
 import com.misaka.demo.entity.RouteSpot;
 import com.misaka.demo.entity.Spot;
 import com.misaka.demo.entity.User;
@@ -16,6 +18,7 @@ import com.misaka.demo.mapper.AnimeMapper;
 import com.misaka.demo.mapper.CheckInMapper;
 import com.misaka.demo.mapper.RouteMapper;
 import com.misaka.demo.mapper.RoutePointMapper;
+import com.misaka.demo.mapper.RouteRatingMapper;
 import com.misaka.demo.mapper.RouteSpotMapper;
 import com.misaka.demo.mapper.SpotMapper;
 import com.misaka.demo.mapper.UserMapper;
@@ -64,6 +67,9 @@ public class RouteService {
 
     @Autowired
     private CheckInMapper checkInMapper;
+
+    @Autowired
+    private RouteRatingMapper routeRatingMapper;
 
     /**
      * 落库一条录制完成的路径：route 主表 + route_point 轨迹 + waypoint 转折点。
@@ -172,6 +178,60 @@ public class RouteService {
 
     public Route findById(long id) {
         return routeMapper.selectById(id);
+    }
+
+    /** rateRoute 返回给前端的统计摘要：聚合后的均分/人数 + 当前用户自己这条评价。 */
+    public record RatingSummary(double rating, int ratingCount, int myScore, String myComment) {}
+
+    /**
+     * 提交一次评分/评价：同一用户对同一路径只保留最新一条（覆盖式）。
+     * 评论文字可空——纯打星也算有效评价。提交后回写 route 的均分与评分人数。
+     */
+    @Transactional
+    public RatingSummary rateRoute(Long userId, long routeId, Integer score, String comment) {
+        if (userId == null) throw new RuntimeException("未登录");
+        if (score == null || score < 1 || score > 5) throw new RuntimeException("评分需在 1-5 之间");
+        Route route = routeMapper.selectById(routeId);
+        if (route == null) throw new RuntimeException("路径不存在");
+
+        String trimmed = comment == null ? null : comment.trim();
+        if (trimmed != null && trimmed.isEmpty()) trimmed = null;
+        if (trimmed != null && trimmed.length() > 1000) {
+            throw new RuntimeException("评论过长，请控制在 1000 字以内");
+        }
+
+        RouteRating existing = routeRatingMapper.selectOne(new QueryWrapper<RouteRating>()
+                .eq("route_id", routeId)
+                .eq("user_id", userId));
+        if (existing == null) {
+            RouteRating rr = new RouteRating();
+            rr.setRouteId(routeId);
+            rr.setUserId(userId);
+            rr.setScore(score);
+            rr.setComment(trimmed);
+            rr.setCreatedAt(LocalDateTime.now());
+            routeRatingMapper.insert(rr);
+        } else {
+            UpdateWrapper<RouteRating> w = new UpdateWrapper<RouteRating>()
+                    .eq("id", existing.getId())
+                    .set("score", score)
+                    .set("comment", trimmed)
+                    .set("created_at", LocalDateTime.now());
+            routeRatingMapper.update(null, w);
+        }
+
+        routeRatingMapper.recalcRouteRating(routeId);
+        Route updated = routeMapper.selectById(routeId);
+        double avg = updated.getAvgRating() == null ? 0 : updated.getAvgRating().doubleValue();
+        int count = updated.getRatingCount() == null ? 0 : updated.getRatingCount();
+        return new RatingSummary(avg, count, score, trimmed);
+    }
+
+    /** 路径的评价列表（带评价人信息），分页；前端 0 起页码转成 limit/offset。 */
+    public List<RouteReviewVO> listReviews(long routeId, int page, int size) {
+        int limit = size <= 0 ? 20 : size;
+        int offset = Math.max(0, page) * limit;
+        return routeRatingMapper.selectReviews(routeId, limit, offset);
     }
 
     /**

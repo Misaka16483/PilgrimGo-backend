@@ -3,6 +3,8 @@ package com.misaka.demo.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.misaka.demo.dto.ApiResponse;
 import com.misaka.demo.dto.PageResult;
+import com.misaka.demo.dto.RouteRatingRequest;
+import com.misaka.demo.dto.RouteReviewVO;
 import com.misaka.demo.dto.RouteUploadRequest;
 import com.misaka.demo.dto.RouteVO;
 import com.misaka.demo.entity.Anime;
@@ -41,6 +43,28 @@ public class RouteController {
         Route route = routeService.findById(id);
         if (route == null) return ApiResponse.error(404, "路径不存在");
         return ApiResponse.ok(toVO(route));
+    }
+
+    /** 给路径评分并可附文字评论。同一用户重复提交是覆盖最新一条。需登录。 */
+    @PostMapping("/{id}/rate")
+    public ApiResponse<RouteService.RatingSummary> rate(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable("id") long id,
+            @RequestBody RouteRatingRequest req) {
+        try {
+            return ApiResponse.ok(routeService.rateRoute(userId, id, req.getScore(), req.getComment()));
+        } catch (RuntimeException e) {
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+
+    /** 路径的全部评价（评分 + 评论）列表，按"有评论优先、再按时间倒序"。 */
+    @GetMapping("/{id}/reviews")
+    public ApiResponse<List<RouteReviewVO>> reviews(
+            @PathVariable("id") long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.ok(routeService.listReviews(id, page, size));
     }
 
     /**
