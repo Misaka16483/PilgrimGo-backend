@@ -803,6 +803,13 @@ CREATE INDEX idx_spot_anime_id ON public.spot USING btree (anime_id);
 
 
 --
+-- Name: idx_spot_anime_id_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_spot_anime_id_id ON public.spot USING btree (anime_id, id);
+
+
+--
 -- Name: idx_spot_location; Type: INDEX; Schema: public; Owner: -
 --
 

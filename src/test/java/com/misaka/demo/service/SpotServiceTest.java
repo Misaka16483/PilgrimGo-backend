@@ -14,6 +14,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +31,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class SpotServiceTest {
 
     @Mock private SpotMapper spotMapper;
@@ -115,8 +118,7 @@ class SpotServiceTest {
         anime.setPointsCount(1);
         anime.setAnitabiModified(100L);
 
-        when(animeMapper.selectById(10)).thenReturn(null);
-        when(animeService.syncByBangumiId(10, false)).thenReturn(anime);
+        when(animeMapper.selectById(10)).thenReturn(anime);
 
         AnitabiPoint point = point("p1", "取景地", 35.5, 139.5);
         when(externalClient.fetchAnitabiPoints(10)).thenReturn(List.of(point));
@@ -154,7 +156,7 @@ class SpotServiceTest {
     }
 
     @Test
-    void findByAnimeId_syncsWhenAnimeModifiedChanged() {
+    void findByAnimeId_doesNotSyncWhenAnimeModifiedChangedButLocalSpotsExist() {
         when(spotMapper.selectList(any(QueryWrapper.class)))
                 .thenReturn(List.of(spot(1, 10)))
                 .thenReturn(List.of(spot(1, 10)));
@@ -175,7 +177,7 @@ class SpotServiceTest {
 
         spotService.findByAnimeId(10, false);
 
-        verify(externalClient).fetchAnitabiPoints(10);
+        verify(externalClient, never()).fetchAnitabiPoints(anyInt());
     }
 
     @Test
@@ -216,29 +218,17 @@ class SpotServiceTest {
     }
 
     @Test
-    void findByAnimeIdPage_syncsOnceWhenForceFalseAndLocalEmpty() {
+    void findByAnimeIdPage_defaultDoesNotSyncWhenLocalEmpty() {
         Page<Spot> page = new Page<>(1, 12);
         page.setRecords(List.of(spot(13, 10)));
         when(spotMapper.selectCount(any(QueryWrapper.class))).thenReturn(0L);
         when(spotMapper.selectPage(any(Page.class), any(QueryWrapper.class))).thenReturn(page);
 
-        Anime anime = new Anime();
-        anime.setBangumiId(10);
-        anime.setPointsCount(1);
-        anime.setAnitabiModified(100L);
-
-        when(animeMapper.selectById(10)).thenReturn(null);
-        when(animeService.syncByBangumiId(10, false)).thenReturn(anime);
-
-        AnitabiPoint point = point("p1", "name", 35.5, 139.5);
-        when(externalClient.fetchAnitabiPoints(10)).thenReturn(List.of(point));
-        when(spotMapper.selectByAnitabiPointId("p1")).thenReturn(null);
-
         Page<Spot> result = spotService.findByAnimeIdPage(10, false, 0, 12);
 
         assertSame(page, result);
-        verify(externalClient).fetchAnitabiPoints(10);
-        verify(spotMapper).insert(any(Spot.class));
+        verify(externalClient, never()).fetchAnitabiPoints(10);
+        verify(spotMapper, never()).insert(any(Spot.class));
     }
 
     @Test

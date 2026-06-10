@@ -2,8 +2,10 @@ package com.misaka.demo.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.misaka.demo.dto.LoginRequest;
+import com.misaka.demo.dto.LoginWithSmsRequest;
 import com.misaka.demo.dto.RegisterRequest;
 import com.misaka.demo.entity.User;
+import com.misaka.demo.service.SmsService;
 import com.misaka.demo.service.UserService;
 import com.misaka.demo.util.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -23,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc(addFilters = false)
+@ActiveProfiles("test")
 class AuthControllerTest {
 
     @Autowired private MockMvc mockMvc;
@@ -30,6 +34,7 @@ class AuthControllerTest {
 
     @MockBean private UserService userService;
     @MockBean private JwtUtil jwtUtil;
+    @MockBean private SmsService smsService;
 
     private User user;
 
@@ -115,6 +120,41 @@ class AuthControllerTest {
     }
 
     @Test
+    void loginSms_returnsTokenAndUser() throws Exception {
+        LoginWithSmsRequest req = new LoginWithSmsRequest();
+        req.setPhone("13800138000");
+        req.setCode("1234");
+
+        when(smsService.verifyCode("13800138000", "1234", "LOGIN")).thenReturn(true);
+        when(userService.findByPhone("13800138000")).thenReturn(user);
+        when(jwtUtil.generateToken(1L, "alice")).thenReturn("token-sms");
+
+        mockMvc.perform(post("/api/auth/login/sms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.token").value("token-sms"))
+                .andExpect(jsonPath("$.data.user.id").value(1));
+    }
+
+    @Test
+    void loginSms_returns400WhenCodeInvalid() throws Exception {
+        LoginWithSmsRequest req = new LoginWithSmsRequest();
+        req.setPhone("13800138000");
+        req.setCode("0000");
+
+        when(smsService.verifyCode("13800138000", "0000", "LOGIN")).thenReturn(false);
+
+        mockMvc.perform(post("/api/auth/login/sms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("验证码错误"));
+    }
+
+    @Test
     void me_returnsUserVOWhenAttributePresent() throws Exception {
         when(userService.findById(1L)).thenReturn(user);
 
@@ -135,4 +175,5 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.message").value("用户不存在"));
     }
+
 }

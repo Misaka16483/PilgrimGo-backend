@@ -3,12 +3,12 @@ package com.misaka.demo.dto;
 import lombok.Data;
 
 @Data
-public class SpotMapCluster {
-    private Double latitude;
-    private Double longitude;
+public class MapBoundsVO {
     private Double minLat;
     private Double maxLat;
     private Double minLng;
     private Double maxLng;
+    private Double latitude;
+    private Double longitude;
     private Integer count;
 }

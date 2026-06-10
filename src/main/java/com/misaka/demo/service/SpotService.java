@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.misaka.demo.client.ExternalAnimeClient;
 import com.misaka.demo.client.ExternalAnimeClient.AnitabiPoint;
 import com.misaka.demo.dto.MapAnimeOptionVO;
+import com.misaka.demo.dto.MapBoundsVO;
 import com.misaka.demo.dto.SpotMapCluster;
 import com.misaka.demo.dto.SpotMapItemVO;
+import com.misaka.demo.dto.SpotVO;
 import com.misaka.demo.entity.Anime;
 import com.misaka.demo.entity.Spot;
 import com.misaka.demo.mapper.AnimeMapper;
@@ -98,6 +100,10 @@ public class SpotService {
                 .toList();
     }
 
+    public MapBoundsVO findAnimeMapBounds(int animeId) {
+        return spotMapper.selectMainBoundsByAnimeId(animeId);
+    }
+
     public Anime findAnime(int animeId) {
         return animeMapper.selectById(animeId);
     }
@@ -139,6 +145,9 @@ public class SpotService {
     public List<Spot> findByAnimeId(int animeId, boolean force) {
         QueryWrapper<Spot> wrapper = animeSpotsWrapper(animeId);
         List<Spot> local = spotMapper.selectList(wrapper);
+        if (!force && !local.isEmpty()) {
+            return local;
+        }
         if (!ensureSpotsSynced(animeId, force, local.size())) {
             return local;
         }
@@ -155,23 +164,53 @@ public class SpotService {
         return findByAnimeId(animeId, false);
     }
 
+    public List<Spot> findLocalByAnimeId(int animeId) {
+        return spotMapper.selectList(animeSpotsWrapper(animeId));
+    }
+
     public Page<Spot> findByAnimeIdPage(int animeId, boolean force, int page, int size) {
+        return findByAnimeIdPage(animeId, force, page, size, false);
+    }
+
+    public Page<Spot> findByAnimeIdPage(int animeId, boolean force, int page, int size, boolean sync) {
         Long localCountValue = spotMapper.selectCount(new QueryWrapper<Spot>().eq("anime_id", animeId));
         int localCount = localCountValue == null ? 0 : localCountValue.intValue();
-        if (force || localCount == 0) {
-            ensureSpotsSynced(animeId, force, localCount);
+        if (sync && (force || localCount == 0)) {
+            if (ensureSpotsSynced(animeId, force, localCount)) {
+                Long updatedCount = spotMapper.selectCount(new QueryWrapper<Spot>().eq("anime_id", animeId));
+                localCount = updatedCount == null ? 0 : updatedCount.intValue();
+            }
         }
-        Page<Spot> resultPage = new Page<>(page + 1, size);
+        Page<Spot> resultPage = new Page<>(page + 1, size, false);
+        resultPage.setTotal(localCount);
         return spotMapper.selectPage(resultPage, animeSpotsWrapper(animeId));
+    }
+
+    public Page<SpotVO> findExternalByAnimeIdPage(int animeId, int page, int size) {
+        Anime anime = animeService.findExternalOnlyById(animeId);
+        Page<SpotVO> result = new Page<>(page + 1, size, false);
+        if (anime == null) {
+            result.setRecords(List.of());
+            result.setTotal(0);
+            return result;
+        }
+
+        List<SpotVO> all = externalClient.fetchAnitabiPoints(animeId).stream()
+                .filter(point -> point.getId() != null && point.getGeo() != null && point.getGeo().size() == 2)
+                .map(point -> toExternalSpotVO(point, animeId, anime))
+                .toList();
+        int from = Math.min(Math.max(page, 0) * Math.max(size, 1), all.size());
+        int to = Math.min(from + Math.max(size, 1), all.size());
+        result.setRecords(all.subList(from, to));
+        result.setTotal(all.size());
+        return result;
     }
 
     private boolean ensureSpotsSynced(int animeId, boolean force, int localCount) {
         Anime beforeSync = animeMapper.selectById(animeId);
 
-        Anime anime = animeService.syncByBangumiId(animeId, force);
-        boolean modifiedChanged = hasModifiedChanged(beforeSync, anime);
-        int expected = anime == null || anime.getPointsCount() == null ? 0 : anime.getPointsCount();
-        boolean needSync = force || localCount < expected || modifiedChanged;
+        Anime anime = force ? animeService.syncByBangumiId(animeId, true) : beforeSync;
+        boolean needSync = force || localCount == 0;
 
         if (!needSync || anime == null) {
             return false;
@@ -179,8 +218,8 @@ public class SpotService {
 
         try {
             List<AnitabiPoint> points = externalClient.fetchAnitabiPoints(animeId);
-            log.info("Sync spots for anime {}: local={}, expected={}, fetched={}",
-                    animeId, localCount, expected, points.size());
+            log.info("Sync spots for anime {}: local={}, fetched={}",
+                    animeId, localCount, points.size());
             if (points.isEmpty()) {
                 return false;
             }
@@ -198,17 +237,21 @@ public class SpotService {
         }
     }
 
-    private boolean hasModifiedChanged(Anime beforeSync, Anime afterSync) {
-        if (beforeSync == null) {
-            return afterSync != null;
-        }
-        if (afterSync == null) {
-            return false;
-        }
-        if (beforeSync.getAnitabiModified() == null || afterSync.getAnitabiModified() == null) {
-            return false;
-        }
-        return !beforeSync.getAnitabiModified().equals(afterSync.getAnitabiModified());
+    private SpotVO toExternalSpotVO(AnitabiPoint point, int animeId, Anime anime) {
+        Spot spot = new Spot();
+        spot.setId(-Math.abs((long) point.getId().hashCode()));
+        spot.setAnimeId(animeId);
+        spot.setAnitabiPointId(point.getId());
+        spot.setName(point.getName());
+        spot.setNameCn(point.getCn());
+        spot.setImageUrl(point.getImage());
+        spot.setEpisode(point.getEp());
+        spot.setSceneSeconds(point.getS());
+        spot.setLatitude(BigDecimal.valueOf(point.getGeo().get(0)));
+        spot.setLongitude(BigDecimal.valueOf(point.getGeo().get(1)));
+        spot.setOrigin(point.getOrigin());
+        spot.setOriginUrl(point.getOriginURL());
+        return SpotVO.from(spot, anime);
     }
 
     private boolean upsertFromAnitabi(AnitabiPoint point, int animeId) {

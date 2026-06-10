@@ -65,7 +65,7 @@ class AnimeServiceTest {
     @SuppressWarnings("unchecked")
     @Test
     void search_blankKeywordReturnsOrderedPageWithoutFallback() {
-        when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
+        when(animeMapper.selectSearchAnimeWithSpots(any(Page.class), any()))
                 .thenReturn(pageWith(List.of(sample)));
 
         Page<Anime> result = animeService.search("   ", 0, 20);
@@ -77,7 +77,7 @@ class AnimeServiceTest {
     @SuppressWarnings("unchecked")
     @Test
     void search_localHitsSkipExternalFallback() {
-        when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
+        when(animeMapper.selectSearchAnimeWithSpots(any(Page.class), any()))
                 .thenReturn(pageWith(List.of(sample, sample, sample)));
 
         animeService.search("keyword", 0, 20);
@@ -88,7 +88,7 @@ class AnimeServiceTest {
     @SuppressWarnings("unchecked")
     @Test
     void search_secondPageNeverTriggersFallback() {
-        when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
+        when(animeMapper.selectSearchAnimeWithSpots(any(Page.class), any()))
                 .thenReturn(emptyPage());
 
         animeService.search("keyword", 1, 20);
@@ -98,46 +98,29 @@ class AnimeServiceTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void search_lowLocalHitsTriggersExternalFallbackAndReruns() {
-        when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
-                .thenReturn(emptyPage())
-                .thenReturn(pageWith(List.of(sample)));
-
-        BangumiSearchItem bangumi = new BangumiSearchItem();
-        bangumi.setId(123);
-        bangumi.setName("Title JP");
-        when(externalClient.searchBangumi("kw", 10)).thenReturn(List.of(bangumi));
-
-        AnitabiLite lite = new AnitabiLite();
-        lite.setId(123);
-        lite.setTitle("Title JP");
-        lite.setCn("Title CN");
-        lite.setGeo(List.of(35.0, 139.0));
-        lite.setPointsLength(5);
-        when(externalClient.fetchAnitabiLite(123)).thenReturn(lite);
-        when(animeMapper.selectById(123)).thenReturn(null);
+    void search_lowLocalHitsDoesNotTriggerExternalFallback() {
+        when(animeMapper.selectSearchAnimeWithSpots(any(Page.class), any()))
+                .thenReturn(emptyPage());
 
         Page<Anime> result = animeService.search("kw", 0, 20);
 
-        assertEquals(1, result.getRecords().size());
-        verify(externalClient).searchBangumi("kw", 10);
-        verify(externalClient).fetchAnitabiLite(123);
-        verify(animeMapper).insert(any(Anime.class));
-        verify(animeMapper, times(2)).selectPage(any(Page.class), any(QueryWrapper.class));
+        assertTrue(result.getRecords().isEmpty());
+        verify(externalClient, never()).searchBangumi(any(), anyInt());
+        verify(externalClient, never()).fetchAnitabiLite(anyInt());
+        verify(animeMapper, never()).insert(any(Anime.class));
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void search_externalFallbackErrorIsSwallowed() {
-        when(animeMapper.selectPage(any(Page.class), any(QueryWrapper.class)))
+    void search_missingLocalDataReturnsEmptyPage() {
+        when(animeMapper.selectSearchAnimeWithSpots(any(Page.class), any()))
                 .thenReturn(emptyPage());
-        when(externalClient.searchBangumi(any(), anyInt()))
-                .thenThrow(new RuntimeException("network down"));
 
         Page<Anime> result = animeService.search("kw", 0, 20);
 
         assertNotNull(result);
         assertTrue(result.getRecords().isEmpty());
+        verify(externalClient, never()).searchBangumi(any(), anyInt());
     }
 
     @Test
@@ -148,36 +131,12 @@ class AnimeServiceTest {
     }
 
     @Test
-    void findById_fetchesAndPersistsWhenLocalMissing() {
+    void findById_returnsNullWhenLocalMissing() {
         when(animeMapper.selectById(7)).thenReturn(null);
 
-        AnitabiLite lite = new AnitabiLite();
-        lite.setId(7);
-        lite.setTitle("Original");
-        lite.setCn("Title CN 7");
-        lite.setCity("Tokyo");
-        lite.setCover("c.png");
-        lite.setColor("#fff");
-        lite.setGeo(List.of(35.0, 139.0));
-        lite.setZoom(8.5);
-        lite.setPointsLength(3);
-        when(externalClient.fetchAnitabiLite(7)).thenReturn(lite);
-
-        Anime result = animeService.findById(7);
-
-        ArgumentCaptor<Anime> captor = ArgumentCaptor.forClass(Anime.class);
-        verify(animeMapper).insert(captor.capture());
-        Anime saved = captor.getValue();
-        assertEquals(7, saved.getBangumiId());
-        assertEquals("Original", saved.getTitleJp());
-        assertEquals("Title CN 7", saved.getTitleCn());
-        assertEquals("Tokyo", saved.getCity());
-        assertEquals("c.png", saved.getCoverUrl());
-        assertEquals(0, saved.getDefaultLat().compareTo(java.math.BigDecimal.valueOf(35.0)));
-        assertEquals(0, saved.getDefaultLng().compareTo(java.math.BigDecimal.valueOf(139.0)));
-        assertEquals(3, saved.getPointsCount());
-        assertNotNull(saved.getSyncedAt());
-        assertSame(saved, result);
+        assertNull(animeService.findById(7));
+        verify(externalClient, never()).fetchAnitabiLite(anyInt());
+        verify(animeMapper, never()).insert(any(Anime.class));
     }
 
     @Test
@@ -191,7 +150,7 @@ class AnimeServiceTest {
         lite.setImagesLength(12);
         when(externalClient.fetchAnitabiLite(7)).thenReturn(lite);
 
-        animeService.findById(7);
+        animeService.syncByBangumiId(7, true);
 
         ArgumentCaptor<Anime> captor = ArgumentCaptor.forClass(Anime.class);
         verify(animeMapper).insert(captor.capture());
@@ -201,9 +160,9 @@ class AnimeServiceTest {
     @Test
     void findById_returnsNullWhenAnitabiAlsoMissing() {
         when(animeMapper.selectById(99)).thenReturn(null);
-        when(externalClient.fetchAnitabiLite(99)).thenReturn(null);
 
         assertNull(animeService.findById(99));
+        verify(externalClient, never()).fetchAnitabiLite(anyInt());
         verify(animeMapper, never()).insert(any(Anime.class));
     }
 
@@ -223,7 +182,7 @@ class AnimeServiceTest {
 
         when(animeMapper.selectById(50)).thenReturn(null);
 
-        animeService.findById(50);
+        animeService.syncByBangumiId(50, true);
 
         verify(animeMapper).insert(any(Anime.class));
     }
@@ -272,7 +231,7 @@ class AnimeServiceTest {
         BangumiSearchItem bangumi = new BangumiSearchItem();
         bangumi.setId(88);
         bangumi.setName("Original 88");
-        when(externalClient.searchBangumi("official", 10)).thenReturn(List.of(bangumi));
+        when(externalClient.searchBangumi("official", 5)).thenReturn(List.of(bangumi));
 
         AnitabiLite lite = new AnitabiLite();
         lite.setId(88);
@@ -287,7 +246,7 @@ class AnimeServiceTest {
         Page<Anime> result = animeService.searchAndSyncOfficial("official", 0, 20);
 
         assertEquals(1, result.getRecords().size());
-        verify(externalClient).searchBangumi("official", 10);
+        verify(externalClient).searchBangumi("official", 5);
         verify(animeMapper).insert(any(Anime.class));
     }
 
@@ -302,7 +261,7 @@ class AnimeServiceTest {
         BangumiSearchItem bangumi = new BangumiSearchItem();
         bangumi.setId(88);
         bangumi.setName("Original 88");
-        when(externalClient.searchBangumi("official", 10)).thenReturn(List.of(bangumi));
+        when(externalClient.searchBangumi("official", 5)).thenReturn(List.of(bangumi));
 
         AnitabiLite lite = new AnitabiLite();
         lite.setId(88);

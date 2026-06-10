@@ -14,15 +14,15 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AnimeService {
 
     private static final Logger log = LoggerFactory.getLogger(AnimeService.class);
-    private static final int FALLBACK_THRESHOLD = 1;
-    private static final int FALLBACK_FETCH_LIMIT = 10;
-    private static final long ANIME_SYNC_TTL_HOURS = 12;
+    private static final int FALLBACK_FETCH_LIMIT = 5;
 
     @Autowired
     private AnimeMapper animeMapper;
@@ -35,23 +35,11 @@ public class AnimeService {
      * 再通过 Anitabi lite 写入本地。
      */
     public Page<Anime> search(String keyword, int page, int size) {
-        Page<Anime> resultPage = new Page<>(page + 1, size);
-        if (keyword == null || keyword.isBlank()) {
-            return animeMapper.selectPage(resultPage, new QueryWrapper<Anime>().orderByDesc("synced_at"));
+        String safeKeyword = keyword == null ? null : keyword.trim();
+        if (safeKeyword != null && safeKeyword.isBlank()) {
+            safeKeyword = null;
         }
-
-        Page<Anime> result = animeMapper.selectPage(resultPage, likeWrapper(keyword));
-
-        if (page == 0 && result.getRecords().size() < FALLBACK_THRESHOLD) {
-            try {
-                fetchAndPersistFromExternal(keyword);
-                result = animeMapper.selectPage(new Page<>(1, size), likeWrapper(keyword));
-            } catch (Exception e) {
-                log.warn("External fallback failed for '{}': {}", keyword, e.getMessage());
-            }
-        }
-
-        return result;
+        return animeMapper.selectSearchAnimeWithSpots(new Page<>(page + 1, size), safeKeyword);
     }
 
     public Page<Anime> searchAndSyncOfficial(String keyword, int page, int size) {
@@ -62,11 +50,39 @@ public class AnimeService {
                 log.warn("Official sync failed for '{}': {}", keyword, e.getMessage());
             }
         }
-        return animeMapper.selectPage(new Page<>(page + 1, size), likeWrapper(keyword));
+        return withActualSpotCounts(animeMapper.selectPage(new Page<>(page + 1, size), likeWrapper(keyword)));
+    }
+
+    public Page<Anime> searchExternalOnly(String keyword, int page, int size) {
+        Page<Anime> result = new Page<>(page + 1, size);
+        if (keyword == null || keyword.isBlank()) {
+            result.setRecords(List.of());
+            result.setTotal(0);
+            return result;
+        }
+
+        List<Anime> records = externalClient.searchBangumi(keyword, Math.min(Math.max(size, 1), FALLBACK_FETCH_LIMIT)).stream()
+                .filter(item -> item.getId() != null)
+                .map(item -> toExternalAnime(item, externalClient.fetchAnitabiLite(item.getId())))
+                .filter(anime -> anime != null)
+                .toList();
+        result.setRecords(records);
+        result.setTotal(records.size());
+        return result;
+    }
+
+    public Anime findExternalOnlyById(int bangumiId) {
+        AnitabiLite lite = externalClient.fetchAnitabiLite(bangumiId);
+        return toExternalAnime(null, lite);
+    }
+
+    public List<Anime> findCachedAnimeOptions(int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        return animeMapper.selectCachedAnimeOptions(safeLimit);
     }
 
     public Anime findById(int bangumiId) {
-        return syncByBangumiId(bangumiId, false);
+        return animeMapper.selectById(bangumiId);
     }
 
     public Anime syncByBangumiId(int bangumiId, boolean forceSync) {
@@ -121,8 +137,7 @@ public class AnimeService {
         if (forceSync || existing == null) {
             return true;
         }
-        return existing.getSyncedAt() != null
-                && existing.getSyncedAt().isBefore(LocalDateTime.now().minusHours(ANIME_SYNC_TTL_HOURS));
+        return false;
     }
 
     private boolean shouldSyncAnime(Anime existing, AnitabiLite lite, boolean forceSync) {
@@ -187,5 +202,66 @@ public class AnimeService {
             return lite.getImagesLength();
         }
         return lite.getPointsLength() == null ? 0 : lite.getPointsLength();
+    }
+
+    private Anime toExternalAnime(BangumiSearchItem bangumi, AnitabiLite lite) {
+        if (lite == null) {
+            return null;
+        }
+        Anime anime = new Anime();
+        anime.setBangumiId(lite.getId());
+        anime.setTitleCn(lite.getCn());
+        anime.setTitleJp(lite.getTitle());
+        if ((anime.getTitleCn() == null || anime.getTitleCn().isBlank()) && bangumi != null) {
+            anime.setTitleCn(bangumi.getNameCn());
+        }
+        if ((anime.getTitleJp() == null || anime.getTitleJp().isBlank()) && bangumi != null) {
+            anime.setTitleJp(bangumi.getName());
+        }
+        anime.setCity(lite.getCity());
+        anime.setCoverUrl(lite.getCover());
+        anime.setColor(lite.getColor());
+        anime.setPointsCount(resolveDisplaySpotCount(lite));
+        anime.setAnitabiModified(lite.getModified());
+        return anime;
+    }
+
+    private Page<Anime> withActualSpotCounts(Page<Anime> page) {
+        List<Anime> records = page.getRecords();
+        if (records == null || records.isEmpty()) {
+            return page;
+        }
+
+        List<Integer> animeIds = records.stream()
+                .map(Anime::getBangumiId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (animeIds.isEmpty()) {
+            return page;
+        }
+
+        Map<Integer, Integer> spotCounts = new HashMap<>();
+        for (Map<String, Object> row : animeMapper.selectSpotCountsByAnimeIds(animeIds)) {
+            Integer animeId = toInteger(row.get("anime_id"));
+            Integer spotCount = toInteger(row.get("spot_count"));
+            if (animeId != null && spotCount != null) {
+                spotCounts.put(animeId, spotCount);
+            }
+        }
+
+        records.forEach(anime -> anime.setPointsCount(
+                spotCounts.getOrDefault(anime.getBangumiId(), 0)));
+        return page;
+    }
+
+    private Integer toInteger(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return Integer.parseInt(text);
+        }
+        return null;
     }
 }

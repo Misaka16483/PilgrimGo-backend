@@ -2,6 +2,7 @@ package com.misaka.demo.controller;
 
 import com.misaka.demo.dto.ApiResponse;
 import com.misaka.demo.dto.MapAnimeOptionVO;
+import com.misaka.demo.dto.MapBoundsVO;
 import com.misaka.demo.dto.SpotMapItemVO;
 import com.misaka.demo.dto.SpotVO;
 import com.misaka.demo.entity.Anime;
@@ -35,6 +36,15 @@ public class SpotController {
     public ApiResponse<List<MapAnimeOptionVO>> mapAnimeOptions(
             @RequestParam(defaultValue = "50") int limit) {
         return ApiResponse.ok(spotService.findMapAnimeOptions(limit));
+    }
+
+    @GetMapping("/map/anime/{animeId}/bounds")
+    public ApiResponse<MapBoundsVO> mapAnimeBounds(@PathVariable("animeId") int animeId) {
+        MapBoundsVO bounds = spotService.findAnimeMapBounds(animeId);
+        if (bounds == null || bounds.getCount() == null || bounds.getCount() <= 0) {
+            return ApiResponse.error(404, "作品暂无可定位取景地");
+        }
+        return ApiResponse.ok(bounds);
     }
 
     @GetMapping("/{id}")

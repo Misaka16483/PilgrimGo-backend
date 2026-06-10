@@ -118,7 +118,7 @@ class AnimeControllerTest {
         page.setRecords(List.of(s));
         page.setTotal(1);
         when(animeService.findById(1)).thenReturn(a);
-        when(spotService.findByAnimeIdPage(1, false, 0, 12)).thenReturn(page);
+        when(spotService.findByAnimeIdPage(1, false, 0, 12, false)).thenReturn(page);
 
         mockMvc.perform(get("/api/anime/{id}/spots", 1)
                         .param("page", "0")
@@ -141,7 +141,7 @@ class AnimeControllerTest {
         page.setRecords(List.of());
         page.setTotal(12);
         when(animeService.findById(anyInt())).thenReturn(anime(1, "Title CN", "Title JP", 0));
-        when(spotService.findByAnimeIdPage(1, false, 2, 5)).thenReturn(page);
+        when(spotService.findByAnimeIdPage(1, false, 2, 5, false)).thenReturn(page);
 
         mockMvc.perform(get("/api/anime/{id}/spots", 1)
                         .param("page", "2")
@@ -150,26 +150,27 @@ class AnimeControllerTest {
                 .andExpect(jsonPath("$.data.size").value(5))
                 .andExpect(jsonPath("$.data.number").value(2));
 
-        verify(spotService).findByAnimeIdPage(1, false, 2, 5);
+        verify(spotService).findByAnimeIdPage(1, false, 2, 5, false);
     }
 
     @Test
-    void spots_passesForceParamThroughForLegacyListQuery() throws Exception {
+    void spots_ignoresForceParamForPublicLegacyListQuery() throws Exception {
         when(animeService.findById(anyInt())).thenReturn(anime(1, "Title CN", "Title JP", 0));
-        when(spotService.findByAnimeId(1, true)).thenReturn(List.of());
+        when(spotService.findLocalByAnimeId(1)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/anime/{id}/spots", 1).param("force", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(0));
 
-        verify(spotService).findByAnimeId(1, true);
+        verify(spotService).findLocalByAnimeId(1);
+        verify(spotService, never()).findByAnimeId(anyInt(), anyBoolean());
         verify(spotService, never()).findByAnimeIdPage(anyInt(), anyBoolean(), anyInt(), anyInt());
     }
 
     @Test
     void spots_returnsEmptyListWhenNoSpots() throws Exception {
         when(animeService.findById(1)).thenReturn(null);
-        when(spotService.findByAnimeId(1, false)).thenReturn(List.of());
+        when(spotService.findLocalByAnimeId(1)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/anime/{id}/spots", 1))
                 .andExpect(status().isOk())

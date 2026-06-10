@@ -1,6 +1,7 @@
 package com.misaka.demo.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.misaka.demo.dto.MapBoundsVO;
 import com.misaka.demo.dto.SpotMapCluster;
 import com.misaka.demo.entity.Spot;
 import org.apache.ibatis.annotations.Mapper;
@@ -33,6 +34,10 @@ public interface SpotMapper extends BaseMapper<Spot> {
 
     @Select("SELECT AVG(latitude)::double precision AS latitude, " +
             "       AVG(longitude)::double precision AS longitude, " +
+            "       MIN(latitude)::double precision AS \"minLat\", " +
+            "       MAX(latitude)::double precision AS \"maxLat\", " +
+            "       MIN(longitude)::double precision AS \"minLng\", " +
+            "       MAX(longitude)::double precision AS \"maxLng\", " +
             "       COUNT(*)::int AS count " +
             "FROM spot " +
             "WHERE location IS NOT NULL " +
@@ -49,6 +54,29 @@ public interface SpotMapper extends BaseMapper<Spot> {
                                                 @Param("cellSize") BigDecimal cellSize,
                                                 @Param("limit") int limit,
                                                 @Param("animeId") Integer animeId);
+
+    @Select("WITH points AS ( " +
+            "  SELECT latitude::double precision AS latitude, longitude::double precision AS longitude " +
+            "  FROM spot " +
+            "  WHERE anime_id = #{animeId} AND location IS NOT NULL " +
+            "), center_point AS ( " +
+            "  SELECT AVG(latitude) AS avg_lat, AVG(longitude) AS avg_lng FROM points " +
+            "), ranked AS ( " +
+            "  SELECT p.latitude, p.longitude, " +
+            "         ROW_NUMBER() OVER (ORDER BY ABS(p.latitude - c.avg_lat) + ABS(p.longitude - c.avg_lng)) AS rn, " +
+            "         COUNT(*) OVER () AS total " +
+            "  FROM points p CROSS JOIN center_point c " +
+            ") " +
+            "SELECT MIN(latitude)::double precision AS \"minLat\", " +
+            "       MAX(latitude)::double precision AS \"maxLat\", " +
+            "       MIN(longitude)::double precision AS \"minLng\", " +
+            "       MAX(longitude)::double precision AS \"maxLng\", " +
+            "       AVG(latitude)::double precision AS latitude, " +
+            "       AVG(longitude)::double precision AS longitude, " +
+            "       COUNT(*)::int AS count " +
+            "FROM ranked " +
+            "WHERE rn <= GREATEST(1, CEIL(total * 0.85))")
+    MapBoundsVO selectMainBoundsByAnimeId(@Param("animeId") int animeId);
 
     @Update("UPDATE spot " +
             "SET location = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) " +

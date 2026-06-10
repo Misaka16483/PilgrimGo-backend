@@ -35,6 +35,38 @@ public class AnimeController {
         return ApiResponse.ok(PageResult.from(p, AnimeVO::from));
     }
 
+    @GetMapping("/cached")
+    public ApiResponse<List<AnimeVO>> cached(@RequestParam(defaultValue = "50") int limit) {
+        return ApiResponse.ok(animeService.findCachedAnimeOptions(limit).stream()
+                .map(AnimeVO::from)
+                .toList());
+    }
+
+    @GetMapping("/external")
+    public ApiResponse<PageResult<AnimeVO>> externalList(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size) {
+        Page<Anime> p = animeService.searchExternalOnly(keyword, page, size);
+        return ApiResponse.ok(PageResult.from(p, AnimeVO::from));
+    }
+
+    @GetMapping("/external/{id}")
+    public ApiResponse<AnimeVO> externalDetail(@PathVariable("id") int id) {
+        Anime a = animeService.findExternalOnlyById(id);
+        if (a == null) return ApiResponse.error(404, "外部作品暂不可用");
+        return ApiResponse.ok(AnimeVO.from(a));
+    }
+
+    @GetMapping("/external/{id}/spots")
+    public ApiResponse<PageResult<SpotVO>> externalSpots(
+            @PathVariable("id") int id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size) {
+        Page<SpotVO> spots = spotService.findExternalByAnimeIdPage(id, page, size);
+        return ApiResponse.ok(PageResult.from(spots, s -> s));
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<AnimeVO> detail(@PathVariable("id") int id) {
         Anime a = animeService.findById(id);
@@ -47,6 +79,7 @@ public class AnimeController {
             @PathVariable("id") int id,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
+            @RequestParam(defaultValue = "false") boolean sync,
             @RequestParam(defaultValue = "false") boolean force) {
         Anime a = spotService.findAnime(id);
         if (a == null) {
@@ -55,7 +88,7 @@ public class AnimeController {
         final Anime anime = a;
 
         if (page == null && size == null) {
-            List<Spot> spots = spotService.findByAnimeId(id, force);
+            List<Spot> spots = spotService.findLocalByAnimeId(id);
             return ApiResponse.ok(spots.stream().map(s -> SpotVO.from(s, anime)).toList());
         }
 
@@ -63,7 +96,8 @@ public class AnimeController {
                 id,
                 false,
                 page == null ? 0 : page,
-                size == null ? 12 : size);
+                size == null ? 12 : size,
+                sync);
         return ApiResponse.ok(PageResult.from(spots, s -> SpotVO.from(s, anime)));
     }
 }

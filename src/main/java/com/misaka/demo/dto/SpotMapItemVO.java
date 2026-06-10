@@ -11,6 +11,10 @@ public class SpotMapItemVO {
     private Integer count;
     private Double latitude;
     private Double longitude;
+    private Double minLat;
+    private Double maxLat;
+    private Double minLng;
+    private Double maxLng;
     private String name;
     private String animeTitle;
     private String sceneTime;
@@ -22,6 +26,10 @@ public class SpotMapItemVO {
         v.setCount(cluster.getCount());
         v.setLatitude(cluster.getLatitude());
         v.setLongitude(cluster.getLongitude());
+        v.setMinLat(cluster.getMinLat());
+        v.setMaxLat(cluster.getMaxLat());
+        v.setMinLng(cluster.getMinLng());
+        v.setMaxLng(cluster.getMaxLng());
         v.setName(cluster.getCount() + " spots");
         return v;
     }
