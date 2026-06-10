@@ -25,6 +25,8 @@ public class Route {
     private Integer ratingCount;
     private Integer followCount;
     private String status;
+    /** 是否对其他用户可见；false 时仅作者本人可见。 */
+    private Boolean isPublic;
     private LocalDateTime recordedAt;
     private LocalDateTime createdAt;
 }

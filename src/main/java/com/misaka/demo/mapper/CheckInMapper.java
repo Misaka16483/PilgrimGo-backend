@@ -16,7 +16,7 @@ public interface CheckInMapper extends BaseMapper<CheckIn> {
     @Select("""
         SELECT ci.id, ci.user_id, ci.spot_id, ci.route_id,
                ci.photo_url, ci.comparison_url, ci.content,
-               ci.latitude, ci.longitude, ci.like_count, ci.created_at,
+               ci.latitude, ci.longitude, ci.like_count, ci.is_public, ci.created_at,
                u.username, u.avatar_url,
                s.name AS spot_name, s.name_cn AS spot_name_cn,
                EXISTS (
@@ -26,6 +26,7 @@ public interface CheckInMapper extends BaseMapper<CheckIn> {
         FROM check_in ci
         JOIN "user" u ON ci.user_id = u.id
         JOIN spot s ON ci.spot_id = s.id
+        WHERE (ci.is_public = TRUE OR ci.user_id = #{userId})
         ORDER BY ci.created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     """)
@@ -36,7 +37,7 @@ public interface CheckInMapper extends BaseMapper<CheckIn> {
     @Select("""
         SELECT ci.id, ci.user_id, ci.spot_id, ci.route_id,
                ci.photo_url, ci.comparison_url, ci.content,
-               ci.latitude, ci.longitude, ci.like_count, ci.created_at,
+               ci.latitude, ci.longitude, ci.like_count, ci.is_public, ci.created_at,
                u.username, u.avatar_url,
                s.name AS spot_name, s.name_cn AS spot_name_cn,
                EXISTS (
@@ -47,6 +48,7 @@ public interface CheckInMapper extends BaseMapper<CheckIn> {
         JOIN "user" u ON ci.user_id = u.id
         JOIN spot s ON ci.spot_id = s.id
         WHERE ci.spot_id = #{spotId}
+          AND (ci.is_public = TRUE OR ci.user_id = #{userId})
         ORDER BY ci.created_at DESC
         LIMIT #{limit} OFFSET #{offset}
     """)
@@ -59,7 +61,7 @@ public interface CheckInMapper extends BaseMapper<CheckIn> {
     @Select("""
         SELECT ci.id, ci.user_id, ci.spot_id, ci.route_id,
                ci.photo_url, ci.comparison_url, ci.content,
-               ci.latitude, ci.longitude, ci.like_count, ci.created_at,
+               ci.latitude, ci.longitude, ci.like_count, ci.is_public, ci.created_at,
                u.username, u.avatar_url,
                s.name AS spot_name, s.name_cn AS spot_name_cn,
                EXISTS (

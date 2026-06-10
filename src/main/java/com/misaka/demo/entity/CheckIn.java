@@ -22,5 +22,7 @@ public class CheckIn {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private Integer likeCount;
+    /** 是否对其他用户可见；false 时仅作者本人可见。 */
+    private Boolean isPublic;
     private LocalDateTime createdAt;
 }

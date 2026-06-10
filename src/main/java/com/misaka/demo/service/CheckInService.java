@@ -10,6 +10,7 @@ import com.misaka.demo.mapper.CheckInLikeMapper;
 import com.misaka.demo.mapper.CheckInMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -39,8 +40,35 @@ public class CheckInService {
         checkIn.setLatitude(req.getLatitude());
         checkIn.setLongitude(req.getLongitude());
         checkIn.setLikeCount(0);
+        checkIn.setIsPublic(req.getIsPublic() == null || req.getIsPublic());
         checkIn.setCreatedAt(LocalDateTime.now());
         checkInMapper.insert(checkIn);
+        return checkIn;
+    }
+
+    /** 删除自己的打卡：先清点赞再删主记录，非本人或不存在直接报错。 */
+    @Transactional
+    public void delete(Long userId, Long checkInId) {
+        CheckIn checkIn = requireOwned(userId, checkInId);
+        checkInLikeMapper.delete(new QueryWrapper<CheckInLike>()
+                .eq("check_in_id", checkIn.getId()));
+        checkInMapper.deleteById(checkIn.getId());
+    }
+
+    /** 设置自己打卡的可见性：false 后其他用户在动态/取景地列表里都看不到。 */
+    public CheckIn setVisibility(Long userId, Long checkInId, boolean isPublic) {
+        CheckIn checkIn = requireOwned(userId, checkInId);
+        checkInMapper.update(null, new UpdateWrapper<CheckIn>()
+                .eq("id", checkIn.getId())
+                .set("is_public", isPublic));
+        checkIn.setIsPublic(isPublic);
+        return checkIn;
+    }
+
+    private CheckIn requireOwned(Long userId, Long checkInId) {
+        CheckIn checkIn = checkInMapper.selectById(checkInId);
+        if (checkIn == null) throw new RuntimeException("打卡不存在");
+        if (!checkIn.getUserId().equals(userId)) throw new RuntimeException("只能操作自己的打卡");
         return checkIn;
     }
 

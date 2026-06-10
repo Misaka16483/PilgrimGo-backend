@@ -7,6 +7,7 @@ import com.misaka.demo.dto.RouteRatingRequest;
 import com.misaka.demo.dto.RouteReviewVO;
 import com.misaka.demo.dto.RouteUploadRequest;
 import com.misaka.demo.dto.RouteVO;
+import com.misaka.demo.dto.VisibilityRequest;
 import com.misaka.demo.entity.Anime;
 import com.misaka.demo.entity.Route;
 import com.misaka.demo.entity.RoutePoint;
@@ -32,7 +33,33 @@ public class RouteController {
                                        @RequestBody RouteUploadRequest req) {
         try {
             Route route = routeService.uploadRoute(userId, req);
-            return ApiResponse.ok(toVO(route));
+            return ApiResponse.ok(toVO(route, userId));
+        } catch (RuntimeException e) {
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+
+    /** 删除自己的路径，连带轨迹点/转折点/观景点/评分；打卡仅解绑不删除。 */
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@RequestAttribute(value = "userId", required = false) Long userId,
+                                    @PathVariable("id") long id) {
+        try {
+            routeService.deleteRoute(userId, id);
+            return ApiResponse.ok(null);
+        } catch (RuntimeException e) {
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+
+    /** 设置自己路径的可见性：isPublic=false 后其他用户不可见。 */
+    @PatchMapping("/{id}/visibility")
+    public ApiResponse<RouteVO> setVisibility(@RequestAttribute(value = "userId", required = false) Long userId,
+                                              @PathVariable("id") long id,
+                                              @RequestBody VisibilityRequest req) {
+        if (req.getIsPublic() == null) return ApiResponse.error(400, "isPublic 不能为空");
+        try {
+            Route route = routeService.setVisibility(userId, id, req.getIsPublic());
+            return ApiResponse.ok(toListVO(route, routeService.findAnime(route.getAnimeId()), userId));
         } catch (RuntimeException e) {
             return ApiResponse.error(400, e.getMessage());
         }
@@ -50,14 +77,16 @@ public class RouteController {
         if (userId == null) return ApiResponse.error(401, "未登录");
         Page<Route> p = routeService.findByUser(userId, page, size);
         return ApiResponse.ok(PageResult.from(p,
-                route -> toListVO(route, routeService.findAnime(route.getAnimeId()))));
+                route -> toListVO(route, routeService.findAnime(route.getAnimeId()), userId)));
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<RouteVO> detail(@PathVariable("id") long id) {
+    public ApiResponse<RouteVO> detail(@RequestAttribute(value = "userId", required = false) Long userId,
+                                       @PathVariable("id") long id) {
         Route route = routeService.findById(id);
-        if (route == null) return ApiResponse.error(404, "路径不存在");
-        return ApiResponse.ok(toVO(route));
+        // 私密路径对非作者直接当不存在，避免暴露
+        if (!RouteService.visibleTo(route, userId)) return ApiResponse.error(404, "路径不存在");
+        return ApiResponse.ok(toVO(route, userId));
     }
 
     /** 给路径评分并可附文字评论。同一用户重复提交是覆盖最新一条。需登录。 */
@@ -76,9 +105,13 @@ public class RouteController {
     /** 路径的全部评价（评分 + 评论）列表，按"有评论优先、再按时间倒序"。 */
     @GetMapping("/{id}/reviews")
     public ApiResponse<List<RouteReviewVO>> reviews(
+            @RequestAttribute(value = "userId", required = false) Long userId,
             @PathVariable("id") long id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        if (!RouteService.visibleTo(routeService.findById(id), userId)) {
+            return ApiResponse.error(404, "路径不存在");
+        }
         return ApiResponse.ok(routeService.listReviews(id, page, size));
     }
 
@@ -88,33 +121,34 @@ public class RouteController {
      */
     @GetMapping
     public ApiResponse<PageResult<RouteVO>> list(
+            @RequestAttribute(value = "userId", required = false) Long userId,
             @RequestParam("animeId") int animeId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "rating") String sort) {
-        Page<Route> p = routeService.findByAnime(animeId, page, size, sort);
+        Page<Route> p = routeService.findByAnime(animeId, userId, page, size, sort);
         Anime anime = routeService.findAnime(animeId);
-        return ApiResponse.ok(PageResult.from(p, route -> toListVO(route, anime)));
+        return ApiResponse.ok(PageResult.from(p, route -> toListVO(route, anime, userId)));
     }
 
-    private RouteVO toVO(Route route) {
+    private RouteVO toVO(Route route, Long viewerId) {
         Anime anime = routeService.findAnime(route.getAnimeId());
         User author = route.getUserId() == null ? null : routeService.findAuthor(route.getUserId());
         List<RoutePoint> points = routeService.findPoints(route.getId());
         List<Waypoint> waypoints = routeService.findWaypoints(route.getId());
         var spots = route.getUserId() == null ? Collections.<com.misaka.demo.service.RouteService.RouteSpotDetail>emptyList()
-                : routeService.findRouteSpots(route.getId(), route.getUserId());
+                : routeService.findRouteSpots(route.getId(), route.getUserId(), viewerId);
         return RouteVO.from(route, anime, author, points, waypoints, spots);
     }
 
     /** 列表场景 VO：跳过轨迹点查询，作者按需查；anime 由调用方传入避免 N+1。
      *  spots 仍然查（列表卡片要 spotCount + 缩略图），但作者照片这里其实用不到，
      *  暂时简单复用 findRouteSpots，未来要做列表瘦身再拆。 */
-    private RouteVO toListVO(Route route, Anime anime) {
+    private RouteVO toListVO(Route route, Anime anime, Long viewerId) {
         User author = route.getUserId() == null ? null : routeService.findAuthor(route.getUserId());
         List<Waypoint> waypoints = routeService.findWaypoints(route.getId());
         var spots = route.getUserId() == null ? Collections.<com.misaka.demo.service.RouteService.RouteSpotDetail>emptyList()
-                : routeService.findRouteSpots(route.getId(), route.getUserId());
+                : routeService.findRouteSpots(route.getId(), route.getUserId(), viewerId);
         return RouteVO.from(route, anime, author, Collections.emptyList(), waypoints, spots);
     }
 }

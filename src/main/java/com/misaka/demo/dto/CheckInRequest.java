@@ -13,4 +13,6 @@ public class CheckInRequest {
     private String content;
     private BigDecimal latitude;
     private BigDecimal longitude;
+    /** 是否对其他用户可见，不传默认公开。 */
+    private Boolean isPublic;
 }

@@ -17,6 +17,8 @@ public class RouteUploadRequest {
     private List<Long> spotIds;
     /** 录制期间用户在 /ar/compare 完成的打卡 id；上传时反向把这些 check_in.route_id 补成当前路径。 */
     private List<Long> checkInIds;
+    /** 是否对其他用户可见，不传默认公开。 */
+    private Boolean isPublic;
 
     @Data
     public static class TrackPointDTO {

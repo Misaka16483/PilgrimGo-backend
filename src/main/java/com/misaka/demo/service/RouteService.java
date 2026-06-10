@@ -101,6 +101,7 @@ public class RouteService {
         route.setRatingCount(0);
         route.setFollowCount(0);
         route.setStatus("pending");
+        route.setIsPublic(req.getIsPublic() == null || req.getIsPublic());
         route.setRecordedAt(startedAt);
         route.setCreatedAt(LocalDateTime.now());
         routeMapper.insert(route);
@@ -180,6 +181,48 @@ public class RouteService {
         return routeMapper.selectById(id);
     }
 
+    /** 私密路径仅作者本人可见。 */
+    public static boolean visibleTo(Route route, Long viewerId) {
+        if (route == null) return false;
+        if (!Boolean.FALSE.equals(route.getIsPublic())) return true;
+        return route.getUserId() != null && route.getUserId().equals(viewerId);
+    }
+
+    /**
+     * 删除自己的路径：清掉轨迹点/转折点/关联观景点/评分，打卡只解绑 route_id 不删，
+     * pilgrimage_record 历史表里的引用一并清理，最后删主表。
+     */
+    @Transactional
+    public void deleteRoute(Long userId, long routeId) {
+        if (userId == null) throw new RuntimeException("未登录");
+        Route route = routeMapper.selectById(routeId);
+        if (route == null) throw new RuntimeException("路径不存在");
+        if (!userId.equals(route.getUserId())) throw new RuntimeException("只能删除自己的路径");
+
+        routePointMapper.delete(new QueryWrapper<RoutePoint>().eq("route_id", routeId));
+        waypointMapper.delete(new QueryWrapper<Waypoint>().eq("route_id", routeId));
+        routeSpotMapper.delete(new QueryWrapper<RouteSpot>().eq("route_id", routeId));
+        routeRatingMapper.delete(new QueryWrapper<RouteRating>().eq("route_id", routeId));
+        checkInMapper.update(null, new UpdateWrapper<CheckIn>()
+                .eq("route_id", routeId)
+                .set("route_id", null));
+        routeMapper.deletePilgrimageRecordsByRouteId(routeId);
+        routeMapper.deleteById(routeId);
+    }
+
+    /** 设置自己路径的可见性：false 后其他用户在作品路径列表/详情里都看不到。 */
+    public Route setVisibility(Long userId, long routeId, boolean isPublic) {
+        if (userId == null) throw new RuntimeException("未登录");
+        Route route = routeMapper.selectById(routeId);
+        if (route == null) throw new RuntimeException("路径不存在");
+        if (!userId.equals(route.getUserId())) throw new RuntimeException("只能操作自己的路径");
+        routeMapper.update(null, new UpdateWrapper<Route>()
+                .eq("id", routeId)
+                .set("is_public", isPublic));
+        route.setIsPublic(isPublic);
+        return route;
+    }
+
     /** rateRoute 返回给前端的统计摘要：聚合后的均分/人数 + 当前用户自己这条评价。 */
     public record RatingSummary(double rating, int ratingCount, int myScore, String myComment) {}
 
@@ -192,7 +235,7 @@ public class RouteService {
         if (userId == null) throw new RuntimeException("未登录");
         if (score == null || score < 1 || score > 5) throw new RuntimeException("评分需在 1-5 之间");
         Route route = routeMapper.selectById(routeId);
-        if (route == null) throw new RuntimeException("路径不存在");
+        if (!visibleTo(route, userId)) throw new RuntimeException("路径不存在");
 
         String trimmed = comment == null ? null : comment.trim();
         if (trimmed != null && trimmed.isEmpty()) trimmed = null;
@@ -237,11 +280,17 @@ public class RouteService {
     /**
      * 按作品分页查询路径列表。sort：rating=按评分高到低；newest=按创建时间倒序。
      * 仅返回已发布或 pending 的路径（status != 'rejected'），避免脏数据上前端。
+     * 私密路径只对作者本人出现在列表里。
      */
-    public Page<Route> findByAnime(int animeId, int page, int size, String sort) {
+    public Page<Route> findByAnime(int animeId, Long viewerId, int page, int size, String sort) {
         QueryWrapper<Route> q = new QueryWrapper<Route>()
                 .eq("anime_id", animeId)
                 .ne("status", "rejected");
+        if (viewerId == null) {
+            q.eq("is_public", true);
+        } else {
+            q.and(w -> w.eq("is_public", true).or().eq("user_id", viewerId));
+        }
         if ("newest".equalsIgnoreCase(sort)) {
             q.orderByDesc("created_at");
         } else {
@@ -275,8 +324,9 @@ public class RouteService {
     /**
      * 拉出一条路径关联的全部观景点（按 visit_order）并附带作者本人在该点的打卡照片。
      * 返回 Object[]{ routeSpot, spot, List&lt;CheckIn&gt; }，service 内部用，避免新建一票 DTO。
+     * 作者设为私密的打卡照片只在作者本人查看时返回。
      */
-    public List<RouteSpotDetail> findRouteSpots(long routeId, long authorUserId) {
+    public List<RouteSpotDetail> findRouteSpots(long routeId, long authorUserId, Long viewerUserId) {
         List<RouteSpot> rs = routeSpotMapper.selectByRouteId(routeId);
         if (rs.isEmpty()) return Collections.emptyList();
 
@@ -285,9 +335,11 @@ public class RouteService {
                 .collect(Collectors.toMap(Spot::getId, s -> s));
 
         // 作者照片可能跨多个 spot，一次查全后按 spot_id 分桶
+        boolean viewerIsAuthor = viewerUserId != null && viewerUserId == authorUserId;
         Map<Long, List<CheckIn>> photosBySpot = checkInMapper
                 .selectByRouteAndUser(routeId, authorUserId).stream()
                 .filter(ci -> ci.getSpotId() != null)
+                .filter(ci -> viewerIsAuthor || !Boolean.FALSE.equals(ci.getIsPublic()))
                 .collect(Collectors.groupingBy(CheckIn::getSpotId));
 
         return rs.stream()

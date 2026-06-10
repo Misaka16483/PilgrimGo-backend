@@ -37,6 +37,9 @@ public class RouteVO {
     private int ratingCount;
     /** 关联的取景地数量，前端列表卡片展示。 */
     private int spotCount;
+    /** 是否对其他用户可见；"我的路径"里作者据此显示私密标记。
+     *  用包装类型让 Lombok 生成 getIsPublic()，JSON 字段名才是 isPublic 而非 public。 */
+    private Boolean isPublic;
     private String createdAt;
 
     public static RouteVO from(Route r,
@@ -69,6 +72,7 @@ public class RouteVO {
         v.setRating(r.getAvgRating() == null ? 0 : r.getAvgRating().doubleValue());
         v.setRatingCount(r.getRatingCount() == null ? 0 : r.getRatingCount());
         v.setSpotCount(spotVOs.size());
+        v.setIsPublic(!Boolean.FALSE.equals(r.getIsPublic()));
         v.setCreatedAt(r.getCreatedAt() == null ? null
                 : r.getCreatedAt().toInstant(ZoneOffset.UTC).toString());
         return v;

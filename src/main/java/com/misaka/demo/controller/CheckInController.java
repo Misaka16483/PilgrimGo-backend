@@ -3,6 +3,7 @@ package com.misaka.demo.controller;
 import com.misaka.demo.dto.ApiResponse;
 import com.misaka.demo.dto.CheckInRequest;
 import com.misaka.demo.dto.CheckInVO;
+import com.misaka.demo.dto.VisibilityRequest;
 import com.misaka.demo.entity.CheckIn;
 import com.misaka.demo.service.CheckInService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,5 +60,30 @@ public class CheckInController {
             @RequestAttribute("userId") Long userId,
             @PathVariable Long id) {
         return ApiResponse.ok(checkInService.like(userId, id));
+    }
+
+    /** 删除自己的打卡（连带点赞记录）。 */
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@RequestAttribute("userId") Long userId,
+                                    @PathVariable Long id) {
+        try {
+            checkInService.delete(userId, id);
+            return ApiResponse.ok(null);
+        } catch (RuntimeException e) {
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+
+    /** 设置自己打卡的可见性：isPublic=false 后其他用户不可见。 */
+    @PatchMapping("/{id}/visibility")
+    public ApiResponse<CheckIn> setVisibility(@RequestAttribute("userId") Long userId,
+                                              @PathVariable Long id,
+                                              @RequestBody VisibilityRequest req) {
+        if (req.getIsPublic() == null) return ApiResponse.error(400, "isPublic 不能为空");
+        try {
+            return ApiResponse.ok(checkInService.setVisibility(userId, id, req.getIsPublic()));
+        } catch (RuntimeException e) {
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
 }

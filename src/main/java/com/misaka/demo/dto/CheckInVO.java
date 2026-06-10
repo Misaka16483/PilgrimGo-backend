@@ -22,5 +22,7 @@ public class CheckInVO {
     private BigDecimal longitude;
     private Integer likeCount;
     private Boolean liked;
+    /** 是否对其他用户可见；"我的打卡"里作者据此显示私密标记。 */
+    private Boolean isPublic;
     private LocalDateTime createdAt;
 }
