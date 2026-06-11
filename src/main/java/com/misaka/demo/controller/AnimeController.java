@@ -67,6 +67,21 @@ public class AnimeController {
         return ApiResponse.ok(PageResult.from(spots, s -> s));
     }
 
+    /**
+     * 一键收录外部作品：把 Anitabi 上的作品信息 + 全部地标同步到本地库。
+     * POST 不在 JwtAuthFilter 的公共 GET 白名单内，自然要求登录。
+     */
+    @PostMapping("/{id}/sync")
+    public ApiResponse<AnimeVO> syncFromExternal(@PathVariable("id") int id) {
+        Anime anime = animeService.syncByBangumiId(id, true);
+        if (anime == null) {
+            return ApiResponse.error(404, "该作品在 Anitabi 暂无巡礼数据，无法收录");
+        }
+        int spotCount = spotService.syncSpotsFromAnitabi(id);
+        anime.setPointsCount(spotCount);
+        return ApiResponse.ok(AnimeVO.from(anime));
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<AnimeVO> detail(@PathVariable("id") int id) {
         Anime a = animeService.findById(id);

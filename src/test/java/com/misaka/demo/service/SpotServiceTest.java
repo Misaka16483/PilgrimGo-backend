@@ -131,6 +131,31 @@ class SpotServiceTest {
     }
 
     @Test
+    void syncSpotsFromAnitabi_upsertsAllPointsAndReturnsLocalCount() {
+        AnitabiPoint p1 = point("p1", "取景地一", 35.5, 139.5);
+        AnitabiPoint p2 = point("p2", "取景地二", 35.6, 139.6);
+        AnitabiPoint broken = point("p3", "缺坐标", 0, 0);
+        broken.setGeo(null);
+        when(externalClient.fetchAnitabiPoints(10)).thenReturn(List.of(p1, p2, broken));
+        when(spotMapper.selectByAnitabiPointId(any())).thenReturn(null);
+        when(spotMapper.selectCount(any(QueryWrapper.class))).thenReturn(2L);
+
+        int count = spotService.syncSpotsFromAnitabi(10);
+
+        assertEquals(2, count);
+        verify(spotMapper, org.mockito.Mockito.times(2)).insert(any(Spot.class));
+    }
+
+    @Test
+    void syncSpotsFromAnitabi_returnsLocalCountWhenExternalEmpty() {
+        when(externalClient.fetchAnitabiPoints(10)).thenReturn(List.of());
+        when(spotMapper.selectCount(any(QueryWrapper.class))).thenReturn(5L);
+
+        assertEquals(5, spotService.syncSpotsFromAnitabi(10));
+        verify(spotMapper, never()).insert(any(Spot.class));
+    }
+
+    @Test
     void findByAnimeId_forceTrueAlwaysSyncs() {
         when(spotMapper.selectList(any(QueryWrapper.class)))
                 .thenReturn(List.of(spot(1, 10), spot(2, 10), spot(3, 10)))

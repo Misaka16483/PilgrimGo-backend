@@ -206,6 +206,23 @@ public class SpotService {
         return result;
     }
 
+    /**
+     * 一键收录用：全量拉取 Anitabi 地标并落库（作品信息由调用方先行同步），
+     * 返回同步后该作品的本地地标数。
+     */
+    public int syncSpotsFromAnitabi(int animeId) {
+        List<AnitabiPoint> points = externalClient.fetchAnitabiPoints(animeId);
+        int upserted = 0;
+        for (AnitabiPoint point : points) {
+            if (upsertFromAnitabi(point, animeId)) {
+                upserted++;
+            }
+        }
+        log.info("Import spots for anime {}: fetched={}, upserted={}", animeId, points.size(), upserted);
+        Long count = spotMapper.selectCount(new QueryWrapper<Spot>().eq("anime_id", animeId));
+        return count == null ? 0 : count.intValue();
+    }
+
     private boolean ensureSpotsSynced(int animeId, boolean force, int localCount) {
         Anime beforeSync = animeMapper.selectById(animeId);
 
