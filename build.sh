@@ -68,16 +68,16 @@ REQ_EOF
 fi
 
 # 附带最新数据库 SQL，便于部署初始化。
-# 优先使用仓库根目录的最新完整 dump；输出中同时保留固定文件名，兼容旧部署脚本。
+# 优先使用后端目录的最新完整 dump；输出中同时保留固定文件名，兼容旧部署脚本。
 echo "==> 收集数据库 SQL"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SQL_FILE=""
 for group in latest dump root_schema local_schema; do
   case "$group" in
-    latest) patterns=("$ROOT_DIR"/BJTU2026_latest_*.sql) ;;
-    dump) patterns=("$ROOT_DIR"/BJTU2026_dump_*.sql) ;;
-    root_schema) patterns=("$ROOT_DIR"/BJTU2026_schema.sql) ;;
-    local_schema) patterns=("$SCRIPT_DIR"/BJTU2026_schema.sql) ;;
+    latest) patterns=("$SCRIPT_DIR"/BJTU2026_latest_*.sql) ;;
+    dump) patterns=("$SCRIPT_DIR"/BJTU2026_dump_*.sql) ;;
+    root_schema) patterns=("$SCRIPT_DIR"/BJTU2026_schema.sql) ;;
+    local_schema) patterns=("$ROOT_DIR"/BJTU2026_schema.sql) ;;
   esac
   for pattern in "${patterns[@]}"; do
     [ -e "$pattern" ] || continue
