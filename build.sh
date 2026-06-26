@@ -67,8 +67,33 @@ REQ_EOF
   fi
 fi
 
-# 附带数据库 schema，便于部署初始化
-[ -f BJTU2026_schema.sql ] && cp BJTU2026_schema.sql "$OUTPUT_DIR/"
+# 附带最新数据库 SQL，便于部署初始化。
+# 优先使用仓库根目录的最新完整 dump；输出中同时保留固定文件名，兼容旧部署脚本。
+echo "==> 收集数据库 SQL"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SQL_FILE=""
+for group in latest dump root_schema local_schema; do
+  case "$group" in
+    latest) patterns=("$ROOT_DIR"/BJTU2026_latest_*.sql) ;;
+    dump) patterns=("$ROOT_DIR"/BJTU2026_dump_*.sql) ;;
+    root_schema) patterns=("$ROOT_DIR"/BJTU2026_schema.sql) ;;
+    local_schema) patterns=("$SCRIPT_DIR"/BJTU2026_schema.sql) ;;
+  esac
+  for pattern in "${patterns[@]}"; do
+    [ -e "$pattern" ] || continue
+    if [ -z "$SQL_FILE" ] || [ "$pattern" -nt "$SQL_FILE" ]; then
+      SQL_FILE="$pattern"
+    fi
+  done
+  [ -n "$SQL_FILE" ] && break
+done
+if [ -n "$SQL_FILE" ]; then
+  cp "$SQL_FILE" "$OUTPUT_DIR/BJTU2026_schema.sql"
+  cp "$SQL_FILE" "$OUTPUT_DIR/$(basename "$SQL_FILE")"
+  echo "    使用 $(basename "$SQL_FILE")"
+else
+  echo "    未找到 BJTU2026*.sql，跳过"
+fi
 
 # 生成一键启动脚本：同时拉起 Java 后端与 Python 融合服务
 echo "==> 生成 output/start.sh 启动脚本"
