@@ -74,7 +74,7 @@ server.port=8080
 # PostgreSQL
 spring.datasource.url=jdbc:postgresql://<host>:5432/BJTU2026
 spring.datasource.username=<your-user>
-spring.datasource.password=<your-password>
+spring.datasource.password=${SPRING_DATASOURCE_PASSWORD}
 spring.datasource.driver-class-name=org.postgresql.Driver
 
 # Druid 连接池
@@ -87,12 +87,12 @@ mybatis-plus.configuration.log-impl=org.apache.ibatis.logging.stdout.StdOutImpl
 mybatis-plus.configuration.map-underscore-to-camel-case=true
 
 # JWT
-jwt.secret=<至少 32 字节的随机密钥>
+jwt.secret=${JWT_SECRET}
 jwt.expiration=86400000
 
 # 阿里云 OSS（转折点图片直传，使用 STS 临时凭证）
-oss.access-key-id=<RAM 用户 AK>
-oss.access-key-secret=<RAM 用户 SK>
+oss.access-key-id=${ALIYUN_OSS_ACCESS_KEY_ID}
+oss.access-key-secret=${ALIYUN_OSS_ACCESS_KEY_SECRET}
 oss.role-arn=acs:ram::<accountId>:role/<RoleName>
 oss.role-session-name=pilgrimgo-waypoint
 oss.bucket=<bucket 名>
@@ -101,6 +101,14 @@ oss.endpoint=https://oss-<region>.aliyuncs.com
 oss.sts-endpoint=sts.<region>.aliyuncs.com
 oss.path-prefix=waypoints
 oss.duration-seconds=3600
+
+# 阿里云 SMS
+aliyun.sms.access-key-id=${ALIYUN_SMS_ACCESS_KEY_ID}
+aliyun.sms.access-key-secret=${ALIYUN_SMS_ACCESS_KEY_SECRET}
+aliyun.sms.endpoint=dypnsapi.aliyuncs.com
+aliyun.sms.region-id=cn-hangzhou
+aliyun.sms.sign-name=<短信签名>
+aliyun.sms.template-code=<模板编号>
 ```
 
 ### OSS 准备步骤
@@ -113,11 +121,15 @@ oss.duration-seconds=3600
 要点：
 
 - 默认端口 `8080`，可按需修改 `server.port`。
-- 生产环境请勿在仓库中明文保存数据库密码与 JWT 密钥，建议通过环境变量或外置配置文件覆盖（`--spring.config.location=...` 或 `SPRING_DATASOURCE_PASSWORD` 等环境变量）。
+- 生产环境必须通过部署平台的 Secret Manager、服务管理器环境或外置配置注入敏感值，不得把真实值写入仓库、启动命令或普通日志。
+- 必需环境变量：`SPRING_DATASOURCE_PASSWORD`、`JWT_SECRET`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_SMS_ACCESS_KEY_ID`、`ALIYUN_SMS_ACCESS_KEY_SECRET`。
+- `JWT_SECRET` 必须是至少 32 字节的随机值；轮换该值会使已有登录令牌失效。
+- `./mvnw spring-boot:run`、`java -jar`、`build.sh` 及其生成的 `output/start.sh` 都会继承父进程环境。
+- 如使用外置 Spring 配置，请限制文件权限并通过 `--spring.config.location=...` 指定；本地 `application-local.*`、`application-secrets.*` 和 `.env*` 已被 Git 忽略。
 - `jwt.expiration` 单位为毫秒（默认 24 小时）。
 - `mybatis-plus.configuration.map-underscore-to-camel-case=true` 将数据库 `snake_case` 自动映射为实体 `camelCase`。
 
-测试环境另有 `src/test/resources/application.properties`，单测时使用，互不影响。
+测试会激活 `test` profile，使用 `src/test/resources/application-test.yml` 中的 H2 内存数据库和公开测试值，不需要任何生产数据库或云服务凭据。
 
 ## 六、运行与构建
 

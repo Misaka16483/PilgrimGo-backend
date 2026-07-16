@@ -38,3 +38,14 @@ http-tests/http-client.private.env.json
 
 # build artifacts
 /output/
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+**/application-local.properties
+**/application-local.yml
+**/application-local.yaml
+**/application-secrets.properties
+**/application-secrets.yml
+**/application-secrets.yaml

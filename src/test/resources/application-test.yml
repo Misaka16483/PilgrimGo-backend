@@ -1,20 +1,23 @@
 # 测试环境配置 - 完全隔离
 spring:
-  # 使用H2内存数据库，完全隔离生产数据
+  # 使用 H2 内存数据库，完全隔离生产数据
   datasource:
     url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
-    schema: classpath:schema.sql
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
 
-  # H2控制台（仅测试环境可用）
+  # H2 控制台（仅测试环境可用）
   h2:
     console:
       enabled: true
       path: /h2-console
 
-# MyBatis-Plus配置
+# MyBatis-Plus 配置
 mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
@@ -24,16 +27,14 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-# JWT配置（测试专用密钥）
+# JWT 配置（公开的测试专用值，不用于生产）
 jwt:
   secret: "test-only-jwt-signing-key-32-bytes-minimum"
-  expiration: 3600000  # 1小时
+  expiration: 3600000  # 1 小时
 
-# 短信服务（Mock模式）
-sms:
-  mock:
-    enabled: true
-  aliyun:
+# 短信服务测试配置（仅用于初始化 SDK，不调用外部接口）
+aliyun:
+  sms:
     access-key-id: "test-only-access-key-id"
     access-key-secret: "test-only-access-key-secret"
 
